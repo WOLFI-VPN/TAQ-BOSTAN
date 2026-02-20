@@ -134,7 +134,18 @@ monitor_ports() {
   log_event "Starting traffic monitor script."
   sleep 2
   clear
-  sudo python3 "$MONITOR_SCRIPT"
+
+  # Temporarily ignore Ctrl+C for the main script
+  local original_trap
+  original_trap=$(trap -p SIGINT)
+  trap '' SIGINT
+
+  # Run the monitor. The '|| true' prevents the script from exiting on error (like Ctrl+C).
+  sudo python3 "$MONITOR_SCRIPT" || true
+
+  # Restore the original trap
+  eval "$original_trap"
+
   log_event "Traffic monitor stopped by user."
   colorEcho "Traffic monitor stopped." blue
   read -rp "Press Enter to return to the main menu..."
