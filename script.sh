@@ -15,6 +15,38 @@ BOLD="\e[1m"
 RESET="\e[0m"
 
 #################################
+#        GITHUB AUTO UPDATE
+#################################
+
+GITHUB_REPO="https://github.com/USERNAME/REPO.git"
+INSTALL_DIR="/opt/taq-bostan"
+
+install_git() {
+  if ! command -v git &> /dev/null; then
+    echo -e "${YELLOW}Git not found. Installing...${RESET}"
+    apt update -y && apt install git -y
+  fi
+}
+
+update_from_github() {
+
+  install_git
+
+  echo -e "${CYAN}Checking for updates from GitHub...${RESET}"
+
+  if [ ! -d "$INSTALL_DIR" ]; then
+    git clone $GITHUB_REPO $INSTALL_DIR
+  else
+    cd $INSTALL_DIR || exit 1
+    git fetch --all
+    git reset --hard origin/$(git rev-parse --abbrev-ref HEAD)
+    git pull
+  fi
+
+  cd $INSTALL_DIR || exit 1
+}
+
+#################################
 #        UI FUNCTIONS
 #################################
 
@@ -52,8 +84,8 @@ loading() {
 #################################
 
 check_hysteria_script() {
-  if [ ! -f "./hysteria.sh" ]; then
-    echo -e "${RED}hysteria.sh not found in current directory!${RESET}"
+  if [ ! -f "$INSTALL_DIR/hysteria.sh" ]; then
+    echo -e "${RED}hysteria.sh not found in repository!${RESET}"
     exit 1
   fi
 }
@@ -98,6 +130,12 @@ speedtest() {
 }
 
 #################################
+#        START UPDATE FIRST
+#################################
+
+update_from_github
+
+#################################
 #        MAIN MENU
 #################################
 
@@ -123,7 +161,7 @@ case $choice in
 1)
   check_hysteria_script
   loading
-  bash ./hysteria.sh
+  bash $INSTALL_DIR/hysteria.sh
 ;;
 
 2)
@@ -164,6 +202,7 @@ case $choice in
 
   read -p "Press Enter..."
 ;;
+
 5)
   read -p "Are you sure? [y/N]: " confirm
   if [[ "$confirm" =~ ^[Yy]$ ]]; then
