@@ -111,6 +111,62 @@ if [ ! -f /etc/hysteria/hysteria-monitor.py ]; then
   sudo chmod +x /etc/hysteria/hysteria-monitor.py
 fi
 
+# ------------------ View Logs Function ------------------
+view_logs() {
+  while true; do
+    draw_menu "Log Management" \
+      "1 | View Full Log" \
+      "2 | View Last 20 Lines" \
+      "3 | Clear Log File" \
+      "4 | Back"
+
+    read -r LOG_CHOICE
+
+    case "$LOG_CHOICE" in
+      1)
+        clear
+        if [ -s "$LOG_FILE" ]; then
+          sudo cat "$LOG_FILE"
+          echo ""
+          colorEcho "End of log file." blue
+        else
+          colorEcho "Log file is empty." yellow
+        fi
+        read -rp "Press Enter to return..."
+        ;;
+      2)
+        clear
+        if [ -s "$LOG_FILE" ]; then
+          sudo tail -n 20 "$LOG_FILE"
+          echo ""
+          colorEcho "Showing last 20 lines." blue
+        else
+          colorEcho "Log file is empty." yellow
+        fi
+        read -rp "Press Enter to return..."
+        ;;
+      3)
+        read -rp "Are you sure you want to clear the entire log file? [y/N]: " CONFIRM
+        if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+          sudo truncate -s 0 "$LOG_FILE"
+          log_event "Log file cleared by user."
+          colorEcho "Log file has been cleared." green
+        else
+          colorEcho "Log clearing cancelled." yellow
+        fi
+        sleep 2
+        ;;
+      4)
+        return
+        ;;
+      *)
+        colorEcho "Invalid choice." red
+        sleep 2
+        ;;
+    esac
+  done
+}
+
 # ------------------ Manage Tunnels Function ------------------
 manage_tunnels() {
 
@@ -379,9 +435,10 @@ draw_menu "Server Type Selection" \
       while true; do
         draw_menu "Iranian Server Options" \
           "1 | Create New Tunnel" \
-          "2 | Edit tunnel list" \
+          "2 | Manage Tunnels" \
           "3 | Monitor Traffic Ports" \
-          "4 | Exit"
+          "4 | View Script Logs" \
+          "5 | Exit"
         read -rp "> " IRAN_CHOICE
         case "$IRAN_CHOICE" in
           1) 
@@ -393,11 +450,14 @@ draw_menu "Server Type Selection" \
           3) 
             monitor_ports     
             ;;
-          4) 
+          4)
+            view_logs
+            ;;
+          5) 
             colorEcho "Exiting..." yellow; exit 0 
             ;;
           *) 
-            colorEcho "Invalid selection. Please enter 1, 2, 3, or 4." red 
+            colorEcho "Invalid selection. Please enter a valid number." red 
             ;;
         esac
       done
