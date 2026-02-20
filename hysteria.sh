@@ -298,7 +298,7 @@ restart_management_menu() {
               log_event "User is setting a custom auto-restart cronjob."
               colorEcho "Enter the time in 24-hour format." yellow
               read -rp "Enter hour (0-23): " CRON_HOUR
-              read -rp "Enter minute (0-59): " CRON_MINUTE
+              read -rp "دقیقه را وارد کنید (0-59): " CRON_MINUTE
 
               if ! [[ "$CRON_HOUR" =~ ^[0-9]+$ ]] || [ "$CRON_HOUR" -lt 0 ] || [ "$CRON_HOUR" -gt 23 ] || \
                  ! [[ "$CRON_MINUTE" =~ ^[0-9]+$ ]] || [ "$CRON_MINUTE" -lt 0 ] || [ "$CRON_MINUTE" -gt 59 ]; then
@@ -492,7 +492,7 @@ manage_tunnels() {
             TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
             ;;
           [Ee])
-            read -rp "Enter tunnel name (example: my-tunnel): " TUNNEL_NAME
+            read -rp "نام تونل را وارد کنید (مثال: my-tunnel): " TUNNEL_NAME
             ;;
           [Bb])
             continue
@@ -520,8 +520,8 @@ manage_tunnels() {
         CURRENT_AUTH=$(grep 'auth:' "$CONFIG_FILE" | cut -d'\"' -f2)
         CURRENT_SNI=$(grep 'sni:' "$CONFIG_FILE" | cut -d'\"' -f2)
 
-        read -rp "Server [$CURRENT_SERVER]: " NEW_SERVER
-        read -rp "Password [$CURRENT_AUTH]: " NEW_PASSWORD
+        read -rp "سرور [$CURRENT_SERVER]: " NEW_SERVER
+        read -rp "رمز عبور [$CURRENT_AUTH]: " NEW_PASSWORD
         read -rp "SNI [$CURRENT_SNI]: " NEW_SNI
 
         [ -n "$NEW_SERVER" ] && \
@@ -534,11 +534,11 @@ manage_tunnels() {
           sed -i "s|sni: .*|sni: \"$NEW_SNI\"|" "$CONFIG_FILE"
 
         echo ""
-        read -rp "Do you want to edit forwarded ports? [y/N]: " EDIT_PORTS
+        read -rp "آیا می‌خواهید پورت‌های فوروارد شده را ویرایش کنید؟ [y/N]: " EDIT_PORTS
 
         if [[ "$EDIT_PORTS" =~ ^[Yy]$ ]]; then
 
-          read -rp "How many ports do you want to forward? " PORT_FORWARD_COUNT
+          read -rp "چه تعداد پورت می‌خواهید فوروارد کنید؟ " PORT_FORWARD_COUNT
 
           EXISTING_REMOTE_IP=$(grep -m1 "remote:" "$CONFIG_FILE" | awk -F"'" '{print $2}' | cut -d':' -f1)
           [ -z "$EXISTING_REMOTE_IP" ] && EXISTING_REMOTE_IP="0.0.0.0"
@@ -548,7 +548,7 @@ manage_tunnels() {
           PORT_LIST=""
 
           for (( p=1; p<=PORT_FORWARD_COUNT; p++ )); do
-            read -rp "Enter port #$p: " TUNNEL_PORT
+            read -rp "پورت شماره #$p را وارد کنید: " TUNNEL_PORT
 
             # Check if port is in use
             if is_port_in_use "$TUNNEL_PORT"; then
@@ -650,7 +650,7 @@ EOF
             ;;
         esac
 
-        read -rp "Are you sure you want to delete tunnel '${TUNNEL_NAME}'? [y/N]: " CONFIRM
+        read -rp "آیا از حذف تونل '${TUNNEL_NAME}' مطمئن هستید؟ [y/N]: " CONFIRM
 
         if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
           log_event "User confirmed deletion of tunnel: ${TUNNEL_NAME}"
@@ -759,9 +759,9 @@ main() {
                 continue
               fi
 
-              read -rp "Enter server address (IP or domain): " SERVER_ADDR
-              read -rp "Enter a password: " PASSWORD
-              read -rp "Enter SNI (Server Name Indication): " SNI
+              read -rp "آدرس سرور را وارد کنید (IP یا دامنه): " SERVER_ADDR
+              read -rp "رمز عبور را وارد کنید: " PASSWORD
+              read -rp "Enter SNI (Server Name Indication, google.com): " SNI
               read -rp "How many ports do you want to forward? " PORT_FORWARD_COUNT
 
               TCP_FORWARD=""
@@ -769,7 +769,7 @@ main() {
               PORT_LIST=""
 
               for (( p=1; p<=PORT_FORWARD_COUNT; p++ )); do
-                read -rp "Enter port #$p: " TUNNEL_PORT
+                read -rp "پورت شماره #$p را وارد کنید: " TUNNEL_PORT
                 
                 if is_port_in_use "$TUNNEL_PORT"; then
                   colorEcho "Port $TUNNEL_PORT is already in use. Please choose a different port." red
@@ -848,8 +848,86 @@ EOF
         done
         ;;
       2) # Foreign Server
-        colorEcho "Foreign server setup is not yet implemented." yellow
-        sleep 2
+        # Foreign Server Setup
+        log_event "User selected to set up a foreign server."
+        colorEcho "در حال راه اندازی سرور Hysteria در سرور خارج." blue
+
+        # Check if a server config already exists
+        if [ -f "/etc/hysteria/kharej-server.yaml" ]; then
+          colorEcho "یک فایل کانفیگ برای سرور خارج از قبل وجود دارد." yellow
+          read -rp "آیا می‌خواهید آن را بازنویسی کنید؟ [y/N]: " OVERWRITE
+          if [[ ! "$OVERWRITE" =~ ^[Yy]$ ]]; then
+            colorEcho "راه اندازی لغو شد." yellow
+            sleep 2
+            continue
+          fi
+          log_event "User chose to overwrite existing foreign server config."
+        fi
+
+        read -rp "نام دامنه برای این سرور را وارد کنید (برای گواهی TLS): " SERVER_DOMAIN
+        read -rp "رمز عبور برای سرور را وارد کنید: " SERVER_PASSWORD
+        read -rp "پورتی که سرور روی آن گوش دهد را وارد کنید (مثال: 443): " SERVER_PORT
+
+        if is_port_in_use "$SERVER_PORT"; then
+          colorEcho "پورت $SERVER_PORT در حال استفاده است. لطفا پورت دیگری انتخاب کنید." red
+          log_event "Port conflict detected for port $SERVER_PORT during foreign server setup."
+          sleep 2
+          continue
+        fi
+
+        CONFIG_FILE="/etc/hysteria/kharej-server.yaml"
+        SERVICE_FILE="/etc/systemd/system/hysteria-server.service"
+
+        # Create server config
+        cat <<EOF | sudo tee "$CONFIG_FILE" > /dev/null
+listen: :${SERVER_PORT}
+
+acme:
+  domains:
+    - ${SERVER_DOMAIN}
+  email: your-email@example.com # User should change this
+
+auth:
+  type: string
+  string: "${SERVER_PASSWORD}"
+EOF
+
+        # Create systemd service
+        cat <<EOF | sudo tee "$SERVICE_FILE" > /dev/null
+[Unit]
+Description=Hysteria Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hysteria -c ${CONFIG_FILE} server
+Restart=always
+RestartSec=5
+LimitNPROC=512
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+        colorEcho "لطفا فایل ${CONFIG_FILE} را ویرایش کرده و 'your-email@example.com' را با ایمیل واقعی خود برای ACME جایگزین کنید." yellow
+        log_event "User prompted to edit email in server config."
+
+        sudo systemctl daemon-reload
+        sudo systemctl enable hysteria-server.service
+        sudo systemctl start hysteria-server.service
+
+        log_event "Hysteria server setup complete. Service started."
+        colorEcho "راه اندازی سرور Hysteria کامل شد و سرویس شروع به کار کرد." green
+        check_service_status "hysteria-server.service"
+
+        echo "-------------------------------------"
+        colorEcho "مشخصات سرور:" magenta
+        echo "دامنه/IP: ${SERVER_DOMAIN}"
+        echo "پورت: ${SERVER_PORT}"
+        echo "رمز عبور: ${SERVER_PASSWORD}"
+        echo "-------------------------------------"
+        read -rp "برای بازگشت به منوی اصلی، Enter را فشار دهید..."
         ;;
       3) # Exit
         colorEcho "Exiting script." blue
