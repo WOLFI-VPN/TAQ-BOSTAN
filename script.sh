@@ -8,7 +8,7 @@
 #  کاربران می‌توانند با انتخاب گزینه‌های مختلف، ابزارهای متفاوتی را اجرا کنند.
 #
 #  نگارش: 1.0.0
-#  توسعه‌دهنده: ParsaKSH
+#  توسعه‌دهنده: WOLFI-VPN
 #
 # ==================================================================================
 #
@@ -64,7 +64,7 @@ EOF
 
   echo -e "${CYAN}╠${line}╣${RESET}"
 
-  local dev_line="Developed by ParsaKSH"
+  local dev_line="Developed by WOLFI-VPN"
   local sponsor_line="Sponsored by DigitalVPS.ir"
   local love_line="♥ With Love From Iran ♥"
 
@@ -97,6 +97,84 @@ print_menu() {
   echo ""
 }
 
+# ------------------ تابع حذف نصب تعاملی ------------------
+# عملکرد: یک منوی تعاملی برای حذف اجزای مختلف Hysteria نمایش می‌دهد.
+#          کاربر می‌تواند انتخاب کند کدام بخش‌ها حذف شوند.
+uninstall_menu() {
+    echo -e "${YELLOW}Scanning for Hysteria components...${RESET}"
+
+    # Find all components
+    local services=($(systemctl list-unit-files | grep -o 'hysteria-.*\.service'))
+    local configs=($(find /etc/hysteria -name "*.yaml"))
+    local hysteria_binary=$(which hysteria)
+    local log_file="/var/log/hysteria_script.log"
+    local mapping_file="/etc/hysteria/port_mapping.txt"
+    local cron_job=$(crontab -l 2>/dev/null | grep "# Hysteria Tunnels Auto-Restart")
+
+    local all_items=()
+    [[ ${#services[@]} -gt 0 ]] && all_items+=("Hysteria Services (${#services[@]})")
+    [[ ${#configs[@]} -gt 0 ]] && all_items+=("Hysteria Configs (${#configs[@]})")
+    [[ -n "$hysteria_binary" ]] && all_items+=("Hysteria Binary")
+    [[ -f "$log_file" ]] && all_items+=("Script Log File")
+    [[ -f "$mapping_file" ]] && all_items+=("Port Mapping File")
+    [[ -n "$cron_job" ]] && all_items+=("Cronjob for Auto-Restart")
+
+    if [ ${#all_items[@]} -eq 0 ]; then
+        echo -e "${GREEN}No Hysteria components found to uninstall.${RESET}"
+        return
+    fi
+
+    all_items+=("UNINSTALL ALL")
+    all_items+=("Cancel")
+
+    echo -e "${CYAN}Please select the components to uninstall (e.g., 1 3 4):${RESET}"
+    select item in "${all_items[@]}"; do
+        if [[ "$item" == "Cancel" ]]; then
+            echo -e "${YELLOW}Uninstall cancelled.${RESET}"
+            return
+        fi
+
+        if [ -n "$item" ]; then
+            read -p "Are you sure you want to delete the selected components? [y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[yY]$ ]]; then
+                echo -e "${YELLOW}Uninstall cancelled.${RESET}"
+                return
+            fi
+
+            if [[ " $REPLY " =~ " $((${#all_items[@]} - 1)) " ]] || [[ "$item" == "UNINSTALL ALL" ]]; then # UNINSTALL ALL
+                [[ ${#services[@]} -gt 0 ]] && sudo systemctl disable --now ${services[@]} &>/dev/null && sudo rm /etc/systemd/system/hysteria-*.service
+                [[ ${#configs[@]} -gt 0 ]] && sudo rm -f ${configs[@]}
+                [[ -n "$hysteria_binary" ]] && sudo rm -f "$hysteria_binary"
+                [[ -f "$log_file" ]] && sudo rm -f "$log_file"
+                [[ -f "$mapping_file" ]] && sudo rm -f "$mapping_file"
+                [[ -n "$cron_job" ]] && (crontab -l | grep -v "# Hysteria Tunnels Auto-Restart" | crontab -)
+                echo -e "${GREEN}All Hysteria components have been uninstalled.${RESET}"
+            else
+                for choice in $REPLY; do
+                    local selected_item=${all_items[$((choice-1))]}
+                    case "$selected_item" in
+                        *Services*) sudo systemctl disable --now ${services[@]} &>/dev/null && sudo rm /etc/systemd/system/hysteria-*.service && echo "Hysteria services removed.";;
+                        *Configs*) sudo rm -f ${configs[@]} && echo "Hysteria configs removed.";;
+                        *Binary*) sudo rm -f "$hysteria_binary" && echo "Hysteria binary removed.";;
+                        *Log*) sudo rm -f "$log_file" && echo "Script log file removed.";;
+                        *Mapping*) sudo rm -f "$mapping_file" && echo "Port mapping file removed.";;
+                        *Cronjob*) (crontab -l | grep -v "# Hysteria Tunnels Auto-Restart" | crontab -) && echo "Cronjob removed.";;
+                    esac
+                done
+                echo -e "${GREEN}Selected components have been uninstalled.${RESET}"
+            fi
+            
+            sudo systemctl daemon-reload
+            echo -e "${YELLOW}It is recommended to reboot the system to ensure all changes are applied.${RESET}"
+            read -p "Reboot now? [y/N]: " reboot_confirm
+            if [[ "$reboot_confirm" =~ ^[yY]$ ]]; then
+                sudo reboot
+            fi
+            return
+        fi
+    done
+}
+
 # ------------------ تابع اجرای گزینه انتخابی ------------------
 # ورودی: شماره گزینه انتخاب شده توسط کاربر.
 # عملکرد: بر اساس شماره ورودی، دستور یا اسکریپت مربوطه را اجرا می‌کند.
@@ -116,20 +194,8 @@ execute_option() {
       bash <(curl -Ls https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main/wireguard.sh)
       ;;
     4)
-      echo -e "${CYAN}Deleting Hysteria tunnel...${RESET}"
-      sudo systemctl daemon-reload 2>/dev/null
-      for i in {1..9}; do
-        sudo systemctl disable hysteria$i 2>/dev/null
-      done
-      sudo systemctl disable hysteria 2>/dev/null
-      sudo rm /etc/hysteria/server-config.yaml 2>/dev/null
-      sudo rm /etc/hysteria/iran-config*.yaml 2>/dev/null
-      rm /etc/hysteria/hysteria-mapping.txt
-      echo -e "${GREEN}Hysteria tunnel successfully deleted.${RESET}"
-      read -p "Do you want to reboot now? [y/N]: " REBOOT_CHOICE
-      if [[ "$REBOOT_CHOICE" =~ ^[Yy]$ ]]; then
-        sudo shutdown -r now
-      fi
+      echo -e "${CYAN}Starting Hysteria Uninstallation...${RESET}"
+      uninstall_menu
       ;;
      5)
        echo -e "${CYAN}Deleting local IPv6 with Sit...${RESET}"
