@@ -18,7 +18,7 @@ RESET="\e[0m"
 #        GITHUB AUTO UPDATE
 #################################
 
-GITHUB_REPO="https://github.com/WOLFI-VPN/REPO.git"
+GITHUB_REPO="https://github.com/WOLFI-VPN/TAQ-BOSTAN.git"
 INSTALL_DIR="/opt/taq-bostan"
 
 install_git() {
