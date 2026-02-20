@@ -111,6 +111,35 @@ if [ ! -f /etc/hysteria/hysteria-monitor.py ]; then
   sudo chmod +x /etc/hysteria/hysteria-monitor.py
 fi
 
+# ------------------ Monitor Ports Function ------------------
+monitor_ports() {
+  log_event "User requested to monitor ports."
+  MONITOR_SCRIPT="/etc/hysteria/hysteria-monitor.py"
+
+  if ! command -v python3 &> /dev/null; then
+    colorEcho "Python 3 is not installed. Please install it to use the monitor." red
+    log_event "Port monitoring failed: Python 3 not found."
+    sleep 3
+    return
+  fi
+
+  if [ ! -f "$MONITOR_SCRIPT" ]; then
+    colorEcho "Monitor script not found at ${MONITOR_SCRIPT}." red
+    log_event "Port monitoring failed: Monitor script not found."
+    sleep 3
+    return
+  fi
+
+  colorEcho "Starting traffic monitor... Press Ctrl+C to exit." blue
+  log_event "Starting traffic monitor script."
+  sleep 2
+  clear
+  sudo python3 "$MONITOR_SCRIPT"
+  log_event "Traffic monitor stopped by user."
+  colorEcho "Traffic monitor stopped." blue
+  read -rp "Press Enter to return to the main menu..."
+}
+
 # ------------------ View Logs Function ------------------
 view_logs() {
   while true; do
