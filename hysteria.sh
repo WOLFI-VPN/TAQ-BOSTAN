@@ -24,9 +24,13 @@ draw_menu() {
 
   local GREEN='\e[32m'
   local WHITE='\e[97m'
+  local CYAN='\e[36m'
+  local DIM='\e[2m'
   local RESET='\e[0m'
 
-  local width=42
+  clear
+
+  local width=60
   local inner_width=$((width - 2))
   local line=$(printf "%${inner_width}s" "" | sed "s/ /═/g")
 
@@ -43,17 +47,17 @@ draw_menu() {
   local padding_right=$(( inner_width - title_length - padding_left ))
   local title_line="$(printf "%${padding_left}s" "")${title}$(printf "%${padding_right}s" "")"
 
-  echo -e "${GREEN}${border_top}${line}${border_right}${RESET}"
-  echo -e "${GREEN}${border_side}${WHITE}${title_line}${GREEN}${border_side}${RESET}"
-  echo -e "${GREEN}${border_mid}${line}${border_mid_right}${RESET}"
+  echo -e "${CYAN}${border_top}${line}${border_right}${RESET}"
+  echo -e "${CYAN}${border_side}${WHITE}${title_line}${CYAN}${border_side}${RESET}"
+  echo -e "${CYAN}${border_mid}${line}${border_mid_right}${RESET}"
 
   for opt in "${options[@]}"; do
-    printf "${GREEN}${border_side} ${WHITE}%-*s${GREEN} ${border_side}${RESET}\n" $((inner_width - 2)) "$opt"
+    printf "${CYAN}${border_side} ${WHITE}%-*s${CYAN} ${border_side}${RESET}\n" $((inner_width - 2)) "$opt"
   done
 
-  echo -e "${GREEN}${border_mid}${line}${border_mid_right}${RESET}"
-  printf "${GREEN}${border_side} ${GREEN}%-*s${GREEN} ${border_side}${RESET}\n" $((inner_width - 2)) "Enter your choice:"
-  echo -e "${GREEN}${border_bottom}${line}${border_bottom_right}${RESET}"
+  echo -e "${CYAN}${border_mid}${line}${border_mid_right}${RESET}"
+  printf "${CYAN}${border_side} ${DIM}Use number/letter then Enter${CYAN}%*s${border_side}${RESET}\n" $((inner_width - 30)) ""
+  echo -e "${CYAN}${border_bottom}${line}${border_bottom_right}${RESET}"
   echo -ne "${WHITE}> ${RESET}"
 }
 
@@ -101,18 +105,61 @@ fi
 manage_tunnels() {
 
   while true; do
+    # build a numbered list of existing iran tunnels from mapping file
+    MAP_FILE="/etc/hysteria/port_mapping.txt"
+    TUNNEL_NAMES=()
+    if [ -f "$MAP_FILE" ]; then
+      while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
+        case "$CFG_NAME" in
+          iran-*.yaml)
+            NAME="${CFG_NAME#iran-}"
+            NAME="${NAME%.yaml}"
+            TUNNEL_NAMES+=("$NAME")
+            ;;
+        esac
+      done < "$MAP_FILE"
+    fi
+
+    MENU_OPTIONS=()
+    INDEX=1
+    for NAME in "${TUNNEL_NAMES[@]}"; do
+      MENU_OPTIONS+=("$INDEX | $NAME")
+      INDEX=$((INDEX + 1))
+    done
+    MENU_OPTIONS+=("E | Enter name manually")
+    MENU_OPTIONS+=("B | Back")
+
     draw_menu "Manage Iranian Tunnels" \
-      "1 | Edit Tunnel" \
-      "2 | Delete Tunnel" \
-      "3 | Back"
+      "${MENU_OPTIONS[@]}"
 
     read -r EDIT_CHOICE
 
     case "$EDIT_CHOICE" in
 
-      1)
-        read -rp "Enter tunnel name to edit (example: my-tunnel): " TUNNEL_NAME
-        CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
+      [0-9]*)
+        CHOICE_INDEX=$((EDIT_CHOICE - 1))
+        if [ "$CHOICE_INDEX" -lt 0 ] || [ "$CHOICE_INDEX" -ge "${#TUNNEL_NAMES[@]}" ]; then
+          colorEcho "Invalid index." red
+          continue
+        fi
+        TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
+        ;;
+
+      [Ee])
+        read -rp "Enter tunnel name (example: my-tunnel): " TUNNEL_NAME
+        ;;
+
+      [Bb])
+        return
+        ;;
+
+      *)
+        colorEcho "Invalid selection." red
+        continue
+        ;;
+    esac
+
+    CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
 
         if [ ! -f "$CONFIG_FILE" ]; then
           colorEcho "Tunnel does not exist." red
@@ -174,17 +221,18 @@ manage_tunnels() {
 
           cat <<EOF >> "$CONFIG_FILE"
 tcpForwarding:
-$TCP_FORWARD
+${TCP_FORWARD}
 udpForwarding:
-$UDP_FORWARD
+${UDP_FORWARD}
 EOF
 
-          sed -i "\%^iran-${TUNNEL_NAME}\.yaml|d" /etc/hysteria/port_mapping.txt
-          echo "iran-${TUNNEL_NAME}.yaml|hysteria-${TUNNEL_NAME}|$PORT_LIST" \
+          # update mapping file safely
+          sed -i "/^iran-${TUNNEL_NAME}\.yaml|/d" /etc/hysteria/port_mapping.txt
+          echo "iran-${TUNNEL_NAME}.yaml|hysteria-${TUNNEL_NAME}|${PORT_LIST}" \
             | sudo tee -a /etc/hysteria/port_mapping.txt > /dev/null
         fi
 
-        sudo systemctl restart hysteria-"${TUNNEL_NAME}"
+        sudo systemctl restart "hysteria-${TUNNEL_NAME}"
         colorEcho "Tunnel ${TUNNEL_NAME} updated successfully." green
         ;;
 
@@ -199,13 +247,13 @@ EOF
           continue
         fi
 
-        sudo systemctl stop hysteria-"${TUNNEL_NAME}"
-        sudo systemctl disable hysteria-"${TUNNEL_NAME}"
+        sudo systemctl stop "hysteria-${TUNNEL_NAME}"
+        sudo systemctl disable "hysteria-${TUNNEL_NAME}"
         sudo rm -f "$CONFIG_FILE"
         sudo rm -f "$SERVICE_FILE"
         sudo systemctl daemon-reload
 
-        sed -i "\%^iran-${TUNNEL_NAME}\.yaml|d" /etc/hysteria/port_mapping.txt
+        sed -i "/^iran-${TUNNEL_NAME}\.yaml|/d" /etc/hysteria/port_mapping.txt
 
         colorEcho "Tunnel ${TUNNEL_NAME} deleted." green
         ;;
