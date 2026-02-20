@@ -26,6 +26,10 @@ is_port_in_use() {
   fi
 }
 
+# ------------------ Script Entry Point ------------------
+main
+}
+
 check_service_status() {
   local service_name="$1"
   if systemctl is-active --quiet "$service_name"; then
@@ -734,60 +738,75 @@ EOF
   done
 }
 
-# ------------------ Server Type Menu ------------------
-while true; do
-draw_menu "Server Type Selection" \
-    "1 | Setup Iranian Server" \
-    "2 | Setup Foreign Server" \
-    "3 | Exit"
-  read -r SERVER_CHOICE
-  case "$SERVER_CHOICE" in
-    1)
-      while true; do
-          local iran_menu_options=(
-            "1 | Create New Tunnel"
-            "2 | Manage Tunnels"
-            "3 | View Script Logs"
-            "4 | Restart Management"
-            "5 | Exit"
-          )
-          draw_menu "Iranian Server Options" "${iran_menu_options[@]}"
-          read -rp "> " IRAN_CHOICE
-        case "$IRAN_CHOICE" in
-          1) 
-            SERVER_TYPE="iran"; break 2
-            ;;
-          2) 
-            manage_tunnels 
-            ;;
-          3)
-            view_logs
-            ;;
-          4)
-            restart_management_menu
-            ;;
-          5) 
-            colorEcho "Exiting..." yellow; exit 0 
-            ;;
-          *) 
-            colorEcho "Invalid selection. Please enter a valid number." red 
-            ;;
-        esac
-      done
-      ;;
-    2)
-      SERVER_TYPE="foreign"
-      break
-      ;;
-    3)
-      colorEcho "Exiting..." yellow
-      exit 0
-      ;;
-    *)
-      colorEcho "Invalid selection. Please enter 1, 2, or 3." red
-      ;;
-  esac
-done
+# ------------------ Main Loop ------------------
+main() {
+  while true; do
+    local main_menu_options=(
+      "1 | Setup Iranian Server"
+      "2 | Setup Foreign Server"
+      "3 | Exit"
+    )
+    draw_menu "Server Type Selection" "${main_menu_options[@]}"
+    read -r SERVER_CHOICE
+
+    case "$SERVER_CHOICE" in
+      1) # Iranian Server
+        iran_server_menu
+        ;;
+      2) # Foreign Server
+        SERVER_TYPE="foreign"
+        setup_server
+        ;;
+      3) # Exit
+        colorEcho "Exiting script." blue
+        exit 0
+        ;;
+      *)
+        colorEcho "Invalid choice." red
+        sleep 2
+        ;;
+    esac
+  done
+}
+
+iran_server_menu() {
+  while true; do
+    local iran_menu_options=(
+      "1 | Create New Tunnel"
+      "2 | Manage Tunnels"
+      "3 | View Script Logs"
+      "4 | Restart Management"
+      "5 | Back to Main Menu"
+    )
+    draw_menu "Iranian Server Options" "${iran_menu_options[@]}"
+    read -rp "> " IRAN_CHOICE
+
+    case "$IRAN_CHOICE" in
+      1) # Create New Tunnel
+        SERVER_TYPE="iran"
+        setup_server
+        ;;
+      2) # Manage Tunnels
+        manage_tunnels
+        ;;
+      3) # View Logs
+        view_logs
+        ;;
+      4) # Restart Management
+        restart_management_menu
+        ;;
+      5) # Back to Main Menu
+        return
+        ;;
+      *)
+        colorEcho "Invalid choice." red
+        sleep 2
+        ;;
+    esac
+  done
+}
+
+setup_server() {
 
 # ------------------ IP Version Menu (Only for Iran) ------------------
 if [ "$SERVER_TYPE" == "iran" ]; then
