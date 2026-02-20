@@ -1,274 +1,252 @@
 #!/bin/bash
-
 ############################################################
-#                 TAQ-BOSTAN ENTERPRISE PANEL
-#                   Production Edition
+#                  WOLFI VPN FULL SCRIPT                  #
+#        All-in-One Manager + GitHub Raw Downloader       #
+#  - Downloads hysteria.sh from your GitHub (raw)        #
+#  - Install / Reinstall / Update                         #
+#  - BBR Enable                                           #
+#  - Firewall Auto Open                                   #
+#  - SpeedTest                                            #
+#  - QR Code                                              #
+#  - Backup / Restore                                     #
+#  - Service Manager                                      #
 ############################################################
 
-######################## COLORS ############################
+### ====== CONFIG ====== ###
+REPO_BASE="https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main"
+INSTALL_DIR="/opt/wolfi"
+MAIN_FILE="$INSTALL_DIR/hysteria.sh"
+CONFIG_DIR="/etc/hysteria"
+CONFIG_FILE="$CONFIG_DIR/config.yaml"
+SERVICE_FILE="/etc/systemd/system/hysteria.service"
+HYSTERIA_BIN="/usr/local/bin/hysteria"
+BACKUP_DIR="/opt/wolfi/backups"
+LOG_FILE="/opt/wolfi/install.log"
 
-GREEN="\e[32m"
-RED="\e[31m"
-YELLOW="\e[33m"
-BLUE="\e[34m"
-CYAN="\e[36m"
-MAGENTA="\e[35m"
-WHITE="\e[97m"
-BOLD="\e[1m"
-RESET="\e[0m"
+### ====== COLORS ====== ###
+green(){ echo -e "\e[32m$1\e[0m"; }
+red(){ echo -e "\e[31m$1\e[0m"; }
+yellow(){ echo -e "\e[33m$1\e[0m"; }
+blue(){ echo -e "\e[36m$1\e[0m"; }
 
-######################## CONFIG ############################
-
-INSTALL_DIR="/opt/taq-bostan"
-LOG_FILE="/var/log/taq-bostan.log"
-
-GITHUB_BASE="https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main"
-HYSTERIA_URL="$GITHUB_BASE/hysteria.sh"
-SCRIPT_URL="$GITHUB_BASE/script.sh"
-
-LOCAL_HYSTERIA="$INSTALL_DIR/hysteria.sh"
-LOCAL_SCRIPT="$INSTALL_DIR/script.sh"
-
-######################## LOGGER ############################
-
-log() {
-  echo -e "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
+log(){
+echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
 }
 
-######################## CHECK ROOT ########################
-
-check_root() {
-  if [ "$EUID" -ne 0 ]; then
-    echo -e "${RED}Run as root.${RESET}"
-    exit 1
-  fi
+check_root(){
+if [ "$EUID" -ne 0 ]; then
+red "Run as root!"
+exit 1
+fi
 }
 
-######################## CHECK INTERNET ####################
-
-check_internet() {
-  ping -c1 github.com >/dev/null 2>&1 || {
-    echo -e "${RED}No internet connection.${RESET}"
-    exit 1
-  }
+prepare_dirs(){
+mkdir -p $INSTALL_DIR
+mkdir -p $BACKUP_DIR
 }
 
-######################## INSTALL CURL ######################
-
-install_curl() {
-  if ! command -v curl &> /dev/null; then
-    echo -e "${YELLOW}Installing curl...${RESET}"
-    apt update -y >/dev/null 2>&1
-    apt install curl -y >/dev/null 2>&1
-  fi
+detect_os(){
+if [ -f /etc/debian_version ]; then
+PKG_UPDATE="apt update -y"
+PKG_INSTALL="apt install -y"
+elif [ -f /etc/redhat-release ]; then
+PKG_UPDATE="yum update -y"
+PKG_INSTALL="yum install -y"
+else
+red "Unsupported OS"
+exit 1
+fi
 }
 
-######################## SHA CHECK #########################
-
-sha_check() {
-  local file1=$1
-  local file2=$2
-  sha256sum "$file1" | awk '{print $1}' > /tmp/sha1
-  sha256sum "$file2" | awk '{print $1}' > /tmp/sha2
-  cmp -s /tmp/sha1 /tmp/sha2
+install_deps(){
+$PKG_UPDATE
+$PKG_INSTALL curl wget unzip openssl qrencode bc tar
 }
 
-######################## DOWNLOAD FILE #####################
-
-download_file() {
-  local url=$1
-  local dest=$2
-  curl -Ls --connect-timeout 10 "$url" -o "$dest"
+enable_bbr(){
+if ! sysctl net.ipv4.tcp_congestion_control | grep -q bbr; then
+echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+sysctl -p
+green "BBR Enabled"
+else
+yellow "BBR Already Active"
+fi
 }
 
-######################## UPDATE HYSTERIA ###################
-
-update_hysteria() {
-
-  mkdir -p $INSTALL_DIR
-  TMP="/tmp/hysteria_new.sh"
-
-  echo -e "${CYAN}Checking hysteria update...${RESET}"
-  download_file $HYSTERIA_URL $TMP
-
-  if [ ! -s "$TMP" ]; then
-    echo -e "${RED}Download failed.${RESET}"
-    log "Hysteria download failed"
-    return
-  fi
-
-  if [ ! -f "$LOCAL_HYSTERIA" ]; then
-    mv $TMP $LOCAL_HYSTERIA
-    chmod +x $LOCAL_HYSTERIA
-    echo -e "${GREEN}Installed hysteria.sh${RESET}"
-    log "Hysteria installed"
-    return
-  fi
-
-  if ! sha_check $TMP $LOCAL_HYSTERIA; then
-    cp $LOCAL_HYSTERIA "$LOCAL_HYSTERIA.bak"
-    mv $TMP $LOCAL_HYSTERIA
-    chmod +x $LOCAL_HYSTERIA
-    echo -e "${GREEN}Updated hysteria.sh${RESET}"
-    log "Hysteria updated"
-  else
-    rm -f $TMP
-    echo -e "${GREEN}Already up to date${RESET}"
-  fi
+download_main(){
+blue "Downloading hysteria.sh from GitHub..."
+curl -fSL $REPO_BASE/hysteria.sh -o $MAIN_FILE
+if [ $? -ne 0 ]; then
+red "Download failed. Check if repo is PUBLIC."
+exit 1
+fi
+chmod +x $MAIN_FILE
+green "Download successful."
 }
 
-######################## SELF UPDATE #######################
-
-self_update() {
-
-  TMP="/tmp/script_new.sh"
-  download_file $SCRIPT_URL $TMP
-
-  if [ ! -s "$TMP" ]; then
-    echo -e "${RED}Self update failed.${RESET}"
-    return
-  fi
-
-  if ! sha_check $TMP $0; then
-    echo -e "${YELLOW}New version detected. Updating...${RESET}"
-    cp $0 "$0.bak"
-    mv $TMP $0
-    chmod +x $0
-    echo -e "${GREEN}Updated. Restarting...${RESET}"
-    exec $0
-  else
-    rm -f $TMP
-  fi
+run_main(){
+bash $MAIN_FILE
 }
 
-######################## SYSTEM MONITOR ####################
-
-system_monitor() {
-  clear
-  echo -e "${CYAN}===== SYSTEM STATUS =====${RESET}"
-  echo
-  uptime
-  echo
-  free -h
-  echo
-  df -h /
-  echo
-  read -p "Press Enter..."
+open_firewall(){
+if command -v ufw &> /dev/null; then
+ufw allow 443/tcp
+ufw allow 443/udp
+elif command -v firewall-cmd &> /dev/null; then
+firewall-cmd --permanent --add-port=443/tcp
+firewall-cmd --permanent --add-port=443/udp
+firewall-cmd --reload
+fi
 }
 
-######################## TUNNEL STATUS #####################
-
-tunnel_status() {
-
-  services=$(systemctl list-units --type=service --all | grep hysteria | awk '{print $1}')
-
-  if [ -z "$services" ]; then
-    echo "No hysteria services."
-  else
-    for svc in $services; do
-      name="${svc%.service}"
-      status=$(systemctl is-active $name 2>/dev/null)
-      echo "$name → $status"
-    done
-  fi
-
-  read -p "Press Enter..."
+show_status(){
+echo "------ Service Status ------"
+systemctl status hysteria --no-pager
 }
 
-######################## RESTART ALL ########################
-
-restart_all() {
-  for s in /etc/systemd/system/hysteria*.service; do
-    name=$(basename "$s" .service)
-    systemctl restart $name 2>/dev/null
-  done
-  echo -e "${GREEN}All restarted.${RESET}"
-  sleep 1
+restart_service(){
+systemctl restart hysteria
+green "Service restarted."
 }
 
-######################## DELETE ALL #########################
-
-delete_all() {
-
-  read -p "Are you sure? [y/N]: " confirm
-  [[ "$confirm" =~ ^[Yy]$ ]] || return
-
-  systemctl stop hysteria* 2>/dev/null
-  rm -rf /etc/hysteria
-  rm -rf /etc/systemd/system/hysteria*
-  systemctl daemon-reload
-
-  echo -e "${GREEN}All removed.${RESET}"
-  read -p "Press Enter..."
+stop_service(){
+systemctl stop hysteria
+red "Service stopped."
 }
 
-######################## UI ###############################
-
-draw_menu() {
-  clear
-  echo -e "${GREEN}============================================${RESET}"
-  echo -e "${BOLD}${CYAN}      TAQ-BOSTAN ENTERPRISE PANEL${RESET}"
-  echo -e "${GREEN}============================================${RESET}"
-  echo
-  echo "1) Hysteria Manager"
-  echo "2) Restart All Tunnels"
-  echo "3) Tunnel Status"
-  echo "4) System Monitor"
-  echo "5) Delete All"
-  echo "6) Self Update"
-  echo "7) Exit"
-  echo
+enable_service(){
+systemctl enable hysteria
 }
 
-######################## INIT ###############################
+disable_service(){
+systemctl disable hysteria
+}
 
-check_root
-check_internet
-install_curl
-update_hysteria
+uninstall_all(){
+systemctl stop hysteria 2>/dev/null
+systemctl disable hysteria 2>/dev/null
+rm -rf $CONFIG_DIR
+rm -f $SERVICE_FILE
+rm -f $HYSTERIA_BIN
+rm -rf $INSTALL_DIR
+systemctl daemon-reload
+green "Completely removed."
+}
 
-######################## MAIN LOOP ##########################
+speed_test(){
+if ! command -v speedtest &> /dev/null; then
+curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | bash 2>/dev/null
+$PKG_INSTALL speedtest 2>/dev/null
+fi
+speedtest --accept-license --accept-gdpr
+}
 
-while true; do
+system_stats(){
+echo "CPU:"
+top -bn1 | grep "Cpu(s)"
+echo ""
+echo "RAM:"
+free -h
+echo ""
+echo "Disk:"
+df -h
+}
 
-draw_menu
-read -p "Select option [1-7]: " choice
+backup_config(){
+DATE=$(date +%Y%m%d-%H%M%S)
+tar -czf $BACKUP_DIR/backup-$DATE.tar.gz $CONFIG_DIR 2>/dev/null
+green "Backup saved: backup-$DATE.tar.gz"
+}
 
-case $choice in
+restore_backup(){
+echo "Available backups:"
+ls $BACKUP_DIR
+read -p "Enter backup file name: " FILE
+tar -xzf $BACKUP_DIR/$FILE -C /
+green "Restored."
+systemctl restart hysteria
+}
 
+update_script(){
+blue "Updating from GitHub..."
+bash <(curl -s $REPO_BASE/script.sh)
+}
+
+show_client(){
+SERVER_IP=$(curl -s https://api.ipify.org)
+if [ -f $CONFIG_FILE ]; then
+PASSWORD=$(grep password $CONFIG_FILE | awk '{print $2}')
+PORT=$(grep listen $CONFIG_FILE | awk -F: '{print $2}')
+LINK="hysteria2://$PASSWORD@$SERVER_IP:$PORT/?sni=$SERVER_IP&insecure=1#WOLFI"
+echo ""
+green "Client Link:"
+echo $LINK
+echo ""
+qrencode -t ANSIUTF8 "$LINK"
+else
+red "Config not found."
+fi
+}
+
+header(){
+clear
+echo "=================================================="
+echo "               WOLFI VPN FULL PANEL              "
+echo "=================================================="
+}
+
+menu(){
+header
+echo "1) Download & Install (from GitHub)"
+echo "2) Reinstall from GitHub"
+echo "3) Show Client Link"
+echo "4) Restart Service"
+echo "5) Stop Service"
+echo "6) Service Status"
+echo "7) Enable BBR"
+echo "8) Open Firewall"
+echo "9) Speed Test"
+echo "10) System Stats"
+echo "11) Backup Config"
+echo "12) Restore Backup"
+echo "13) Update Script"
+echo "14) Uninstall Everything"
+echo "0) Exit"
+echo "=================================================="
+read -p "Select: " opt
+
+case $opt in
 1)
-  bash $LOCAL_HYSTERIA
-  ;;
-
+check_root
+prepare_dirs
+detect_os
+install_deps
+download_main
+run_main
+;;
 2)
-  restart_all
-  ;;
-
-3)
-  tunnel_status
-  ;;
-
-4)
-  system_monitor
-  ;;
-
-5)
-  delete_all
-  ;;
-
-6)
-  self_update
-  ;;
-
-7)
-  exit 0
-  ;;
-
-*)
-  echo -e "${RED}Invalid option${RESET}"
-  sleep 1
-  ;;
-
+download_main
+run_main
+;;
+3) show_client ;;
+4) restart_service ;;
+5) stop_service ;;
+6) show_status ;;
+7) enable_bbr ;;
+8) open_firewall ;;
+9) speed_test ;;
+10) system_stats ;;
+11) backup_config ;;
+12) restore_backup ;;
+13) update_script ;;
+14) uninstall_all ;;
+0) exit ;;
+*) echo "Invalid"; sleep 1 ;;
 esac
 
-done
+read -p "Press Enter to continue..."
+menu
+}
+
+menu
