@@ -23,7 +23,8 @@
 دستور اجرای اسکریپت:
 
 ```bash
- bash <(curl -Ls https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main/hysteria.sh)```
+ bash <(curl -Ls https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main/hysteria.sh)
+```
 ## 🌟 معرفی پروژه
 
 - 🔒 ساخت تونل بسیار امن و سریع با Hysteria2
