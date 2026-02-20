@@ -189,93 +189,128 @@ fi
   set -o pipefail
 }
 
-# ------------------ Monitor Ports Function ------------------
-monitor_ports() {
+# ------------------ Manage Tunnels Function ------------------
+manage_tunnels() {
 
-  set +e
-  set +o pipefail
+  while true; do
+    draw_menu "Manage Iranian Tunnels" \
+      "1 | Edit Tunnel" \
+      "2 | Delete Tunnel" \
+      "3 | Back"
 
-  clear
-  colorEcho "=== Monitoring Traffic Ports ===" cyan
-  echo ""
+    read -r EDIT_CHOICE
 
+    case "$EDIT_CHOICE" in
 
-  if ! command -v netstat &> /dev/null; then
-    colorEcho "Installing net-tools..." yellow
-    sudo apt-get update -qq
-    sudo apt-get install -y net-tools >/dev/null 2>&1
-  fi
+      1)
+        read -rp "Enter tunnel number to edit: " TUNNEL_NUM
+        CONFIG_FILE="/etc/hysteria/iran-config${TUNNEL_NUM}.yaml"
 
-  local found=0
-  # Cache netstat output once for all port checks
-  local tcp_ports
-  local udp_ports
-  tcp_ports=$(netstat -tln 2>/dev/null)
-  udp_ports=$(netstat -uln 2>/dev/null)
-  
-  # Use glob-based discovery instead of iterating 1..9
-  shopt -s nullglob
-  local config_files=(/etc/hysteria/iran-config*.yaml)
-  shopt -u nullglob
-  
-  for cfg in "${config_files[@]}"; do
-    local i="${cfg##*iran-config}"
-    i="${i%.yaml}"
-    ((found++))
+        if [ ! -f "$CONFIG_FILE" ]; then
+          colorEcho "Tunnel does not exist." red
+          continue
+        fi
 
-    echo "🔵 Tunnel #${i}"
-    echo "----------------------------------------"
+        echo ""
+        colorEcho "Leave empty to keep current value." yellow
 
-    local srv
-    srv=$(grep "server:" "$cfg" | cut -d'"' -f2)
-    echo "📡 Server: $srv"
-    if systemctl is-active --quiet hysteria${i}; then
-      echo "🟢 Service: Active"
-    else
-      echo "🔴 Service: Inactive"
-    fi
+        CURRENT_SERVER=$(grep 'server:' "$CONFIG_FILE" | cut -d'"' -f2)
+        CURRENT_AUTH=$(grep 'auth:' "$CONFIG_FILE" | cut -d'"' -f2)
+        CURRENT_SNI=$(grep 'sni:' "$CONFIG_FILE" | cut -d'"' -f2)
 
-    echo -e "\n🔌 Ports Status:"
+        read -rp "Server [$CURRENT_SERVER]: " NEW_SERVER
+        read -rp "Password [$CURRENT_AUTH]: " NEW_PASSWORD
+        read -rp "SNI [$CURRENT_SNI]: " NEW_SNI
 
-    echo "TCP Ports:"
-    while read -r line; do
-      port=$(echo "$line" | grep -o '[0-9]\+')
-      if echo "$tcp_ports" | grep -q ":$port "; then
-        echo "   ✅ $port (Active)"
-      else
-        echo "   ❌ $port (Inactive)"
-      fi
-    done < <(
-      grep -A50 "tcpForwarding:" "$cfg" 2>/dev/null \
-      | grep "listen:" 2>/dev/null
-    )
+        [ -n "$NEW_SERVER" ] && \
+          sed -i "s|server: .*|server: \"$NEW_SERVER\"|" "$CONFIG_FILE"
 
-    echo -e "\nUDP Ports:"
-    while read -r line; do
-      port=$(echo "$line" | grep -o '[0-9]\+')
-      if echo "$udp_ports" | grep -q ":$port "; then
-        echo "   ✅ $port (Active)"
-      else
-        echo "   ❌ $port (Inactive)"
-      fi
-    done < <(
-      grep -A50 "udpForwarding:" "$cfg" 2>/dev/null \
-      | grep "listen:" 2>/dev/null
-    )
+        [ -n "$NEW_PASSWORD" ] && \
+          sed -i "s|auth: .*|auth: \"$NEW_PASSWORD\"|" "$CONFIG_FILE"
 
-    echo "----------------------------------------"
-    echo ""
+        [ -n "$NEW_SNI" ] && \
+          sed -i "s|sni: .*|sni: \"$NEW_SNI\"|" "$CONFIG_FILE"
+
+        echo ""
+        read -rp "Do you want to edit forwarded ports? [y/N]: " EDIT_PORTS
+
+        if [[ "$EDIT_PORTS" =~ ^[Yy]$ ]]; then
+
+          read -rp "How many ports do you want to forward? " PORT_FORWARD_COUNT
+
+          EXISTING_REMOTE_IP=$(grep -m1 "remote:" "$CONFIG_FILE" | awk -F"'" '{print $2}' | cut -d':' -f1)
+          [ -z "$EXISTING_REMOTE_IP" ] && EXISTING_REMOTE_IP="0.0.0.0"
+
+          TCP_FORWARD=""
+          UDP_FORWARD=""
+          PORT_LIST=""
+
+          for (( p=1; p<=PORT_FORWARD_COUNT; p++ )); do
+            read -rp "Enter port #$p: " TUNNEL_PORT
+
+            TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
+    remote: '$EXISTING_REMOTE_IP:$TUNNEL_PORT'
+"
+            UDP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
+    remote: '$EXISTING_REMOTE_IP:$TUNNEL_PORT'
+"
+
+            if [ -z "$PORT_LIST" ]; then
+              PORT_LIST="$TUNNEL_PORT"
+            else
+              PORT_LIST="$PORT_LIST,$TUNNEL_PORT"
+            fi
+          done
+
+          sed -i '/^tcpForwarding:/,$d' "$CONFIG_FILE"
+
+          cat <<EOF >> "$CONFIG_FILE"
+tcpForwarding:
+$TCP_FORWARD
+udpForwarding:
+$UDP_FORWARD
+EOF
+
+          sed -i "\%^iran-config${TUNNEL_NUM}\.yaml|d" /etc/hysteria/port_mapping.txt
+          echo "iran-config${TUNNEL_NUM}.yaml|hysteria${TUNNEL_NUM}|$PORT_LIST" \
+            | sudo tee -a /etc/hysteria/port_mapping.txt > /dev/null
+        fi
+
+        sudo systemctl restart hysteria${TUNNEL_NUM}
+        colorEcho "Tunnel ${TUNNEL_NUM} updated successfully." green
+        ;;
+
+      2)
+        read -rp "Enter tunnel number to delete: " TUNNEL_NUM
+
+        CONFIG_FILE="/etc/hysteria/iran-config${TUNNEL_NUM}.yaml"
+        SERVICE_FILE="/etc/systemd/system/hysteria${TUNNEL_NUM}.service"
+
+        if [ ! -f "$CONFIG_FILE" ]; then
+          colorEcho "Tunnel does not exist." red
+          continue
+        fi
+
+        sudo systemctl stop hysteria${TUNNEL_NUM}
+        sudo systemctl disable hysteria${TUNNEL_NUM}
+        sudo rm -f "$CONFIG_FILE"
+        sudo rm -f "$SERVICE_FILE"
+        sudo systemctl daemon-reload
+
+        sed -i "\%^iran-config${TUNNEL_NUM}\.yaml|d" /etc/hysteria/port_mapping.txt
+
+        colorEcho "Tunnel ${TUNNEL_NUM} deleted." green
+        ;;
+
+      3)
+        return
+        ;;
+
+      *)
+        colorEcho "Invalid choice." red
+        ;;
+    esac
   done
-
-  if [ $found -eq 0 ]; then
-    colorEcho "No tunnels found!" yellow
-  fi
-
-  colorEcho "Press Enter to return..." green
-  read -r
-
-  set -e
-  set -o pipefail
 }
 
 # ------------------ Server Type Menu ------------------
