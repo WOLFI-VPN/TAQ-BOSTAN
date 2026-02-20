@@ -518,8 +518,8 @@ view_tunnel_details() {
   read -rp "Press Enter to return..."
 }
 
-# ------------------ تابع نمایش وضعیت پیشرفته ------------------
-# عملکرد: وضعیت دقیق هر تونل شامل وضعیت سرویس، مصرف منابع و لاگ‌ها را نمایش می‌دهد.
+# ------------------ Advanced Status View Function ------------------
+# Shows detailed status for each tunnel including service status, resource usage, and logs.
 view_advanced_status() {
   log_event "User is viewing advanced tunnel status."
   clear
@@ -540,15 +540,26 @@ view_advanced_status() {
     echo -e "\n$(printf -- '-%.0s' {1..60})\n"
     colorEcho "Tunnel: ${tunnel_name}" magenta
     
-    if systemctl is-active --quiet "$service_name"; then
+    # More reliable way to check status by parsing the full 'systemctl status' output
+    local status_output
+    status_output=$(systemctl status "$service_name" 2>/dev/null)
+
+    if echo "$status_output" | grep -q "Active: active"; then
       colorEcho "  Status: Active" green
       
-      # Fetch detailed status
-      local status_output=$(systemctl status "$service_name")
-      local uptime=$(echo "$status_output" | grep "Active:" | sed -E 's/.* since (.*); (.*) ago/\2/')
-      local main_pid=$(echo "$status_output" | grep "Main PID:" | awk '{print $3}')
-      local memory=$(echo "$status_output" | grep "Memory:" | awk '{print $2}')
-      local cpu_time=$(ps -p $main_pid -o time= | awk '{print $1}')
+      # Fetch detailed status from the captured output
+      local uptime
+      uptime=$(echo "$status_output" | grep "Active:" | sed -E 's/.* since (.*); (.*) ago/\2/')
+      local main_pid
+      main_pid=$(echo "$status_output" | grep "Main PID:" | awk '{print $3}')
+      local memory
+      memory=$(echo "$status_output" | grep "Memory:" | awk '{print $2}')
+      
+      # Check if main_pid is a valid number before querying ps to prevent errors
+      local cpu_time="N/A"
+      if [[ "$main_pid" =~ ^[0-9]+$ ]] && ps -p "$main_pid" > /dev/null; then
+        cpu_time=$(ps -p "$main_pid" -o time= | awk '{print $1}')
+      fi
 
       echo "  Uptime: ${uptime}"
       echo "  Memory: ${memory}"
@@ -559,7 +570,8 @@ view_advanced_status() {
 
     else
       colorEcho "  Status: Inactive" red
-      local last_log=$(journalctl -u "$service_name" -n 1 --no-pager --output cat 2>/dev/null || echo "No logs found.")
+      local last_log
+      last_log=$(journalctl -u "$service_name" -n 1 --no-pager --output cat 2>/dev/null || echo "No logs found.")
       colorEcho "  Last Log Entry:" yellow
       echo "    ${last_log}"
     fi
