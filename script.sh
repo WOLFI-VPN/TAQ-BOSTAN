@@ -8,7 +8,7 @@
 #  کاربران می‌توانند با انتخاب گزینه‌های مختلف، ابزارهای متفاوتی را اجرا کنند.
 #
 #  نگارش: 1.0.0
-#  توسعه‌دهنده: WOLFI-VPN
+#  توسعه‌دهنده: ParsaKSH
 #
 # ==================================================================================
 #
@@ -64,7 +64,7 @@ EOF
 
   echo -e "${CYAN}╠${line}╣${RESET}"
 
-  local dev_line="Developed by WOLFI-VPN"
+  local dev_line="Developed by ParsaKSH"
   local sponsor_line="Sponsored by DigitalVPS.ir"
   local love_line="♥ With Love From Iran ♥"
 
@@ -78,19 +78,23 @@ EOF
 # ------------------ تابع نمایش منوی اصلی ------------------
 # عملکرد: لیست گزینه‌های قابل انتخاب را برای کاربر نمایش می‌دهد.
 print_menu() {
-  draw_green_line
-  echo -e "${GREEN}|${RESET}              ${BOLD_GREEN}TAQ-BOSTAN Main Menu${RESET}                  ${GREEN}|${RESET}"
-  draw_green_line
-  echo -e "${GREEN}|${RESET} ${BLUE}1)${RESET} Create best and safest tunnel                   ${GREEN}|${RESET}"
-  echo -e "${GREEN}|${RESET} ${YELLOW}2)${RESET} Create local IPv6 with Sit                      ${GREEN}|${RESET}"
-  echo -e "${GREEN}|${RESET} ${MAGENTA}3)${RESET} Create local IPv6 with Wireguard                ${GREEN}|${RESET}"
-  draw_green_line
-  echo -e "${GREEN}|${RESET} ${BLUE}4)${RESET} Delete tunnel                                   ${GREEN}|${RESET}"
-  echo -e "${GREEN}|${RESET} ${YELLOW}5)${RESET} Delete local IPv6 with Sit                      ${GREEN}|${RESET}"
-  echo -e "${GREEN}|${RESET} ${MAGENTA}6)${RESET} Delete local IPv6 with Wireguard                ${GREEN}|${RESET}"
-  draw_green_line
-  echo -e "${GREEN}|${RESET} ${RED}7)${RESET} hysteria Tunnel Speedtest (Run in iran server)  ${GREEN}|${RESET}"
-  draw_green_line
+  local menu_width=55
+  local line=$(printf "%${menu_width}s" | sed "s/ /─/g")
+
+  echo -e "${CYAN}┌${line}┐${RESET}"
+  printf "${CYAN}│${YELLOW}%*s%s%*s${CYAN}│${RESET}\n" $(((menu_width-24)/2)) "" "TAQ-BOSTAN Main Menu" $(((menu_width-24+1)/2)) ""
+  echo -e "${CYAN}├${line}┤${RESET}"
+  printf "${CYAN}│${GREEN} %-53s ${CYAN}│${RESET}\n" "1) Create best and safest tunnel"
+  printf "${CYAN}│${GREEN} %-53s ${CYAN}│${RESET}\n" "2) Create local IPv6 with Sit"
+  printf "${CYAN}│${GREEN} %-53s ${CYAN}│${RESET}\n" "3) Create local IPv6 with Wireguard"
+  echo -e "${CYAN}├${line}┤${RESET}"
+  printf "${CYAN}│${RED} %-53s ${CYAN}│${RESET}\n" "4) Delete tunnel"
+  printf "${CYAN}│${RED} %-53s ${CYAN}│${RESET}\n" "5) Delete local IPv6 with Sit"
+  printf "${CYAN}│${RED} %-53s ${CYAN}│${RESET}\n" "6) Delete local IPv6 with Wireguard"
+  echo -e "${CYAN}├${line}┤${RESET}"
+  printf "${CYAN}│${BLUE} %-53s ${CYAN}│${RESET}\n" "7) Hysteria Tunnel Speedtest (Run in Iran server)"
+  echo -e "${CYAN}└${line}┘${RESET}"
+  echo ""
 }
 
 # ------------------ تابع اجرای گزینه انتخابی ------------------
