@@ -540,16 +540,16 @@ view_advanced_status() {
     echo -e "\n$(printf -- '-%.0s' {1..60})\n"
     colorEcho "Tunnel: ${tunnel_name}" magenta
     
-    # More reliable way to check status by parsing the full 'systemctl status' output
     local status_output
-    if ! status_output=$(systemctl status "$service_name" 2>/dev/null); then
+    # Use LC_ALL=C to force English output for consistent parsing
+    if ! status_output=$(LC_ALL=C systemctl status "$service_name" 2>/dev/null); then
         status_output="" # Ensure variable is empty on failure
     fi
 
+    # Check for the "Active: active" string in the English output
     if [ -n "$status_output" ] && echo "$status_output" | grep -q "Active: active"; then
       colorEcho "  Status: Active" green
       
-      # Fetch detailed status from the captured output
       local uptime
       uptime=$(echo "$status_output" | grep "Active:" | sed -E 's/.* since (.*); (.*) ago/\2/')
       local main_pid
@@ -557,10 +557,10 @@ view_advanced_status() {
       local memory
       memory=$(echo "$status_output" | grep "Memory:" | awk '{print $2}')
       
-      # Check if main_pid is a valid number before querying ps to prevent errors
       local cpu_time="N/A"
+      # Use LC_ALL=C for ps as well, just in case
       if [[ "$main_pid" =~ ^[0-9]+$ ]] && ps -p "$main_pid" > /dev/null; then
-        cpu_time=$(ps -p "$main_pid" -o time= | awk '{print $1}')
+        cpu_time=$(LC_ALL=C ps -p "$main_pid" -o time= | awk '{print $1}')
       fi
 
       echo "  Uptime: ${uptime}"
@@ -568,12 +568,14 @@ view_advanced_status() {
       echo "  CPU Time: ${cpu_time}"
 
       colorEcho "  Recent Logs:" yellow
-      journalctl -u "$service_name" -n 5 --no-pager | sed 's/^/    /'
+      # Use LC_ALL=C for journalctl
+      LC_ALL=C journalctl -u "$service_name" -n 5 --no-pager | sed 's/^/    /'
 
     else
       colorEcho "  Status: Inactive" red
       local last_log
-      last_log=$(journalctl -u "$service_name" -n 1 --no-pager --output cat 2>/dev/null || echo "No logs found.")
+      # Use LC_ALL=C for journalctl
+      last_log=$(LC_ALL=C journalctl -u "$service_name" -n 1 --no-pager --output cat 2>/dev/null || echo "No logs found.")
       colorEcho "  Last Log Entry:" yellow
       echo "    ${last_log}"
     fi
