@@ -1083,7 +1083,6 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
 
-        colorEcho "لطفا فایل ${CONFIG_FILE} را ویرایش کرده و 'your-email@example.com' را با ایمیل واقعی خود برای ACME جایگزین کنید." yellow
         log_event "User prompted to edit email in server config."
 
         sudo systemctl daemon-reload
