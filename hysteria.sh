@@ -119,15 +119,16 @@ manage_tunnels() {
         MAP_FILE="/etc/hysteria/port_mapping.txt"
         TUNNEL_NAMES=()
         if [ -f "$MAP_FILE" ]; then
-          while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
+          # Use sort -u to get unique tunnel names
+          TUNNEL_NAMES=($(while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
             case "$CFG_NAME" in
               iran-*.yaml)
                 NAME="${CFG_NAME#iran-}"
                 NAME="${NAME%.yaml}"
-                TUNNEL_NAMES+=("$NAME")
+                echo "$NAME"
                 ;;
             esac
-          done < "$MAP_FILE"
+          done < "$MAP_FILE" | sort -u))
         fi
 
         if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
@@ -257,15 +258,16 @@ EOF
         MAP_FILE="/etc/hysteria/port_mapping.txt"
         TUNNEL_NAMES=()
         if [ -f "$MAP_FILE" ]; then
-          while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
+          # Use sort -u to get unique tunnel names
+          TUNNEL_NAMES=($(while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
             case "$CFG_NAME" in
               iran-*.yaml)
                 NAME="${CFG_NAME#iran-}"
                 NAME="${NAME%.yaml}"
-                TUNNEL_NAMES+=("$NAME")
+                echo "$NAME"
                 ;;
             esac
-          done < "$MAP_FILE"
+          done < "$MAP_FILE" | sort -u))
         fi
 
         if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
