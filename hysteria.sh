@@ -306,13 +306,15 @@ restart_management_menu() {
 
       3) # Set/Update Auto-Restart
         while true; do
-          draw_menu "Auto-Restart Schedule" \\
-            "1 | Restart Every 6 Hours" \\
-            "2 | Restart Every 12 Hours" \\
-            "3 | Restart Every 24 Hours (at 4:00 AM)" \\
-            "4 | Custom Daily Restart Time" \\
-            "5 | Remove Auto-Restart" \\
+          local cron_menu_options=(
+            "1 | Restart Every 6 Hours"
+            "2 | Restart Every 12 Hours"
+            "3 | Restart Every 24 Hours (at 4:00 AM)"
+            "4 | Custom Daily Restart Time"
+            "5 | Remove Auto-Restart"
             "6 | Back"
+          )
+          draw_menu "Auto-Restart Schedule" "${cron_menu_options[@]}"
 
           read -r CRON_CHOICE
 
