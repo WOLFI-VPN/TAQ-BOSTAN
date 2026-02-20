@@ -130,7 +130,7 @@ view_logs() {
         fi
         read -rp "Press Enter to return..."
         ;;
-      3)
+      4)
         read -rp "Are you sure you want to clear the entire log file? [y/N]: " CONFIRM
         if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
           sudo truncate -s 0 "$LOG_FILE"
@@ -141,7 +141,7 @@ view_logs() {
         fi
         sleep 2
         ;;
-      4)
+      5)
         return
         ;;
       *)
@@ -521,8 +521,52 @@ view_tunnel_details() {
 # ------------------ تابع نمایش وضعیت پیشرفته ------------------
 # عملکرد: وضعیت دقیق هر تونل شامل وضعیت سرویس، مصرف منابع و لاگ‌ها را نمایش می‌دهد.
 view_advanced_status() {
-  colorEcho "This feature is under development." yellow
-  sleep 2
+  log_event "User is viewing advanced tunnel status."
+  clear
+  colorEcho "Fetching advanced status for all tunnels..." blue
+  
+  local config_files=($(sudo find /etc/hysteria -name "iran-*.yaml"))
+
+  if [ ${#config_files[@]} -eq 0 ]; then
+    colorEcho "No tunnels found." yellow
+    sleep 2
+    return
+  fi
+
+  for config_file in "${config_files[@]}"; do
+    local tunnel_name=$(basename "$config_file" .yaml | sed 's/^iran-//')
+    local service_name="hysteria-iran-${tunnel_name}.service"
+    
+    echo -e "\n$(printf -- '-%.0s' {1..60})\n"
+    colorEcho "Tunnel: ${tunnel_name}" magenta
+    
+    if systemctl is-active --quiet "$service_name"; then
+      colorEcho "  Status: Active" green
+      
+      # Fetch detailed status
+      local status_output=$(systemctl status "$service_name")
+      local uptime=$(echo "$status_output" | grep "Active:" | sed -E 's/.* since (.*); (.*) ago/\2/')
+      local main_pid=$(echo "$status_output" | grep "Main PID:" | awk '{print $3}')
+      local memory=$(echo "$status_output" | grep "Memory:" | awk '{print $2}')
+      local cpu_time=$(ps -p $main_pid -o time= | awk '{print $1}')
+
+      echo "  Uptime: ${uptime}"
+      echo "  Memory: ${memory}"
+      echo "  CPU Time: ${cpu_time}"
+
+      colorEcho "  Recent Logs:" yellow
+      journalctl -u "$service_name" -n 5 --no-pager | sed 's/^/    /'
+
+    else
+      colorEcho "  Status: Inactive" red
+      local last_log=$(journalctl -u "$service_name" -n 1 --no-pager --output cat 2>/dev/null || echo "No logs found.")
+      colorEcho "  Last Log Entry:" yellow
+      echo "    ${last_log}"
+    fi
+  done
+  
+  echo -e "\n$(printf -- '-%.0s' {1..60})\n"
+  read -rp "Press Enter to return to the menu..."
 }
 
 # ------------------ Manage Tunnels Function ------------------
@@ -531,9 +575,10 @@ manage_tunnels() {
   while true; do
     local manage_menu_options=(
       "1 | View Tunnel Details"
-      "2 | Edit Tunnel"
-      "3 | Delete Tunnel"
-      "4 | Back"
+      "2 | Advanced Tunnel Status"
+      "3 | Edit Tunnel"
+      "4 | Delete Tunnel"
+      "5 | Back"
     )
     draw_menu "Manage Iranian Tunnels" "${manage_menu_options[@]}"
 
@@ -544,6 +589,9 @@ manage_tunnels() {
         view_tunnel_details
         ;;
       2)
+        view_advanced_status
+        ;;
+      3)
         # build a numbered list of existing iran tunnels from mapping file
         MAP_FILE="/etc/hysteria/port_mapping.txt"
         TUNNEL_NAMES=()
