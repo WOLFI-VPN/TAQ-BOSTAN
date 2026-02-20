@@ -139,11 +139,13 @@ fi
 # ------------------ View Logs Function ------------------
 view_logs() {
   while true; do
-    draw_menu "Log Management" \
-      "1 | View Full Log" \
-      "2 | View Last 20 Lines" \
-      "3 | Clear Log File" \
+    local log_menu_options=(
+      "1 | View Full Log"
+      "2 | View Last 20 Lines"
+      "3 | Clear Log File"
       "4 | Back"
+    )
+    draw_menu "Log Management" "${log_menu_options[@]}"
 
     read -r LOG_CHOICE
 
@@ -470,11 +472,13 @@ view_tunnel_details() {
 manage_tunnels() {
 
   while true; do
-    draw_menu "Manage Iranian Tunnels" \
-      "1 | View Tunnel Details" \
-      "2 | Edit Tunnel" \
-      "3 | Delete Tunnel" \
+    local manage_menu_options=(
+      "1 | View Tunnel Details"
+      "2 | Edit Tunnel"
+      "3 | Delete Tunnel"
       "4 | Back"
+    )
+    draw_menu "Manage Iranian Tunnels" "${manage_menu_options[@]}"
 
     read -r ACTION_CHOICE
 
@@ -740,13 +744,15 @@ draw_menu "Server Type Selection" \
   case "$SERVER_CHOICE" in
     1)
       while true; do
-        draw_menu "Iranian Server Options" \
-          "1 | Create New Tunnel" \
-          "2 | Manage Tunnels" \
-          "3 | View Script Logs" \
-          "4 | Restart Management" \
-          "5 | Exit"
-        read -rp "> " IRAN_CHOICE
+          local iran_menu_options=(
+            "1 | Create New Tunnel"
+            "2 | Manage Tunnels"
+            "3 | View Script Logs"
+            "4 | Restart Management"
+            "5 | Exit"
+          )
+          draw_menu "Iranian Server Options" "${iran_menu_options[@]}"
+          read -rp "> " IRAN_CHOICE
         case "$IRAN_CHOICE" in
           1) 
             SERVER_TYPE="iran"; break 2
