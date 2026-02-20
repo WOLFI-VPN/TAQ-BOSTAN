@@ -130,7 +130,7 @@ view_logs() {
         fi
         read -rp "Press Enter to return..."
         ;;
-      4)
+      3)
         read -rp "Are you sure you want to clear the entire log file? [y/N]: " CONFIRM
         if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
           sudo truncate -s 0 "$LOG_FILE"
@@ -141,7 +141,7 @@ view_logs() {
         fi
         sleep 2
         ;;
-      5)
+      4)
         return
         ;;
       *)
@@ -569,264 +569,253 @@ view_advanced_status() {
   read -rp "Press Enter to return to the menu..."
 }
 
-# ------------------ Manage Tunnels Function ------------------
 manage_tunnels() {
-
   while true; do
     local manage_menu_options=(
       "1 | View Tunnel Details"
       "2 | Advanced Tunnel Status"
       "3 | Edit Tunnel"
       "4 | Delete Tunnel"
-      "5 | Back"
+      "5 | Back to Previous Menu"
     )
-    draw_menu "Manage Iranian Tunnels" "${manage_menu_options[@]}"
+    draw_menu "Manage Tunnels" "${manage_menu_options[@]}"
+    read -rp "Select an option: " MANAGE_CHOICE
 
-    read -r ACTION_CHOICE
-
-    case "$ACTION_CHOICE" in
-      1)
+    case "$MANAGE_CHOICE" in
+      1) # View Details
         view_tunnel_details
         ;;
-      2)
+      2) # Advanced Status
         view_advanced_status
         ;;
-      3)
-        # build a numbered list of existing iran tunnels from mapping file
-        MAP_FILE="/etc/hysteria/port_mapping.txt"
-        TUNNEL_NAMES=()
-        if [ -f "$MAP_FILE" ]; then
-          # Use sort -u to get unique tunnel names
-          TUNNEL_NAMES=($(while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
-            case "$CFG_NAME" in
-              iran-*.yaml)
-                NAME="${CFG_NAME#iran-}"
-                NAME="${NAME%.yaml}"
-                echo "$NAME"
-                ;;
-            esac
-          done < "$MAP_FILE" | sort -u))
-        fi
-
-        if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
-          colorEcho "No tunnels found. You can create one from the main menu." yellow
-          sleep 2
-          continue
-        fi
-
-        MENU_OPTIONS=()
-        INDEX=1
-        for NAME in "${TUNNEL_NAMES[@]}"; do
-          MENU_OPTIONS+=("$INDEX | $NAME")
-          INDEX=$((INDEX + 1))
-        done
-        MENU_OPTIONS+=("E | Enter name manually")
-        MENU_OPTIONS+=("B | Back")
-
-        draw_menu "Select Tunnel to Edit" \
-          "${MENU_OPTIONS[@]}"
-
-        read -r TUNNEL_CHOICE
-
-        case "$TUNNEL_CHOICE" in
-          [0-9]*)
-            CHOICE_INDEX=$((TUNNEL_CHOICE - 1))
-            if [ "$CHOICE_INDEX" -lt 0 ] || [ "$CHOICE_INDEX" -ge "${#TUNNEL_NAMES[@]}" ]; then
-              colorEcho "Invalid index." red
-              sleep 2
-              continue
-            fi
-            TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
-            ;;
-          [Ee])
-            read -rp "نام تونل را وارد کنید (مثال: my-tunnel): " TUNNEL_NAME
-            ;;
-          [Bb])
-            continue
-            ;;
-          *)
-            colorEcho "Invalid selection." red
-            sleep 2
-            continue
-            ;;
-        esac
-
-        CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
-
-        if [ ! -f "$CONFIG_FILE" ]; then
-          colorEcho "Tunnel does not exist." red
-          sleep 2
-          continue
-        fi
-
-        log_event "Attempting to edit tunnel: ${TUNNEL_NAME}"
-        echo ""
-        colorEcho "Leave empty to keep current value." yellow
-
-        CURRENT_SERVER=$(grep 'server:' "$CONFIG_FILE" | cut -d'\"' -f2)
-        CURRENT_AUTH=$(grep 'auth:' "$CONFIG_FILE" | cut -d'\"' -f2)
-        CURRENT_SNI=$(grep 'sni:' "$CONFIG_FILE" | cut -d'\"' -f2)
-
-        read -rp "سرور [$CURRENT_SERVER]: " NEW_SERVER
-        read -rp "رمز عبور [$CURRENT_AUTH]: " NEW_PASSWORD
-        read -rp "SNI [$CURRENT_SNI]: " NEW_SNI
-
-        [ -n "$NEW_SERVER" ] && \
-          sed -i "s|server: .*|server: \"$NEW_SERVER\"|" "$CONFIG_FILE"
-
-        [ -n "$NEW_PASSWORD" ] && \
-          sed -i "s|auth: .*|auth: \"$NEW_PASSWORD\"|" "$CONFIG_FILE"
-
-        [ -n "$NEW_SNI" ] && \
-          sed -i "s|sni: .*|sni: \"$NEW_SNI\"|" "$CONFIG_FILE"
-
-        echo ""
-        read -rp "آیا می‌خواهید پورت‌های فوروارد شده را ویرایش کنید؟ [y/N]: " EDIT_PORTS
-
-        if [[ "$EDIT_PORTS" =~ ^[Yy]$ ]]; then
-
-          read -rp "چه تعداد پورت می‌خواهید فوروارد کنید؟ " PORT_FORWARD_COUNT
-
-          EXISTING_REMOTE_IP=$(grep -m1 "remote:" "$CONFIG_FILE" | awk -F"'" '{print $2}' | cut -d':' -f1)
-          [ -z "$EXISTING_REMOTE_IP" ] && EXISTING_REMOTE_IP="0.0.0.0"
-
-          TCP_FORWARD=""
-          UDP_FORWARD=""
-          PORT_LIST=""
-
-          for (( p=1; p<=PORT_FORWARD_COUNT; p++ )); do
-            read -rp "پورت شماره #$p را وارد کنید: " TUNNEL_PORT
-
-            # Check if port is in use
-            if is_port_in_use "$TUNNEL_PORT"; then
-              colorEcho "Port $TUNNEL_PORT is already in use. Please choose a different port." red
-              log_event "Port conflict detected for port $TUNNEL_PORT during tunnel creation."
-              p=$((p - 1)) # Ask for the same port number again
-              continue
-            fi
-
-            TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT\n    remote: '$EXISTING_REMOTE_IP:$TUNNEL_PORT'\n"
-            UDP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT\n    remote: '$EXISTING_REMOTE_IP:$TUNNEL_PORT'\n"
-
-            if [ -z "$PORT_LIST" ]; then
-              PORT_LIST="$TUNNEL_PORT"
-            else
-              PORT_LIST="$PORT_LIST,$TUNNEL_PORT"
-            fi
-          done
-
-          sed -i '/^tcpForwarding:/,$d' "$CONFIG_FILE"
-
-          cat <<EOF >> "$CONFIG_FILE"
-tcpForwarding:
-${TCP_FORWARD}
-udpForwarding:
-${UDP_FORWARD}
-EOF
-
-          # update mapping file safely
-          sed -i "/^iran-${TUNNEL_NAME}\.yaml|/d" /etc/hysteria/port_mapping.txt
-          echo "iran-${TUNNEL_NAME}.yaml|hysteria-${TUNNEL_NAME}|${PORT_LIST}" \
-            | sudo tee -a /etc/hysteria/port_mapping.txt > /dev/null
-        fi
-
-        sudo systemctl restart "hysteria-${TUNNEL_NAME}.service"
-        log_event "Tunnel ${TUNNEL_NAME} updated successfully."
-        colorEcho "Tunnel ${TUNNEL_NAME} updated successfully." green
-        check_service_status "hysteria-${TUNNEL_NAME}.service"
-        sleep 2
+      3) # Edit Tunnel
+        edit_tunnel
         ;;
-
-      3)
-        # build a numbered list of existing iran tunnels from mapping file
-        MAP_FILE="/etc/hysteria/port_mapping.txt"
-        TUNNEL_NAMES=()
-        if [ -f "$MAP_FILE" ]; then
-          # Use sort -u to get unique tunnel names
-          TUNNEL_NAMES=($(while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
-            case "$CFG_NAME" in
-              iran-*.yaml)
-                NAME="${CFG_NAME#iran-}"
-                NAME="${NAME%.yaml}"
-                echo "$NAME"
-                ;;
-            esac
-          done < "$MAP_FILE" | sort -u))
-        fi
-
-        if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
-          colorEcho "No tunnels found to delete." yellow
-          sleep 2
-          continue
-        fi
-
-        MENU_OPTIONS=()
-        INDEX=1
-        for NAME in "${TUNNEL_NAMES[@]}"; do
-          MENU_OPTIONS+=("$INDEX | $NAME")
-          INDEX=$((INDEX + 1))
-        done
-        MENU_OPTIONS+=("E | Enter name manually")
-        MENU_OPTIONS+=("B | Back")
-
-        draw_menu "Select Tunnel to Delete" \
-          "${MENU_OPTIONS[@]}"
-
-        read -r TUNNEL_CHOICE
-
-        case "$TUNNEL_CHOICE" in
-          [0-9]*)
-            CHOICE_INDEX=$((TUNNEL_CHOICE - 1))
-            if [ "$CHOICE_INDEX" -lt 0 ] || [ "$CHOICE_INDEX" -ge "${#TUNNEL_NAMES[@]}" ]; then
-              colorEcho "Invalid index." red
-              sleep 2
-              continue
-            fi
-            TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
-            ;;
-          [Ee])
-            read -rp "Enter tunnel name (example: my-tunnel): " TUNNEL_NAME
-            ;;
-          [Bb])
-            continue
-            ;;
-          *)
-            colorEcho "Invalid selection." red
-            sleep 2
-            continue
-            ;;
-        esac
-
-        read -rp "آیا از حذف تونل '${TUNNEL_NAME}' مطمئن هستید؟ [y/N]: " CONFIRM
-
-        if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
-          log_event "User confirmed deletion of tunnel: ${TUNNEL_NAME}"
-          sudo systemctl stop "hysteria-${TUNNEL_NAME}.service"
-          sudo systemctl disable "hysteria-${TUNNEL_NAME}.service"
-          sudo rm "/etc/systemd/system/hysteria-${TUNNEL_NAME}.service"
-          sudo rm "/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
-          
-          # Use sed's in-place editing with a backup for safety, and handle the delimiter
-          sudo sed -i.bak -e "/^iran-${TUNNEL_NAME}\.yaml|/d" /etc/hysteria/port_mapping.txt
-
-          sudo systemctl daemon-reload
-          log_event "Tunnel ${TUNNEL_NAME} deleted successfully."
-          colorEcho "Tunnel ${TUNNEL_NAME} deleted successfully." green
-        else
-          log_event "User cancelled deletion of tunnel: ${TUNNEL_NAME}"
-          colorEcho "Deletion cancelled." yellow
-        fi
-        sleep 2
+      4) # Delete Tunnel
+        delete_tunnel
         ;;
-      4)
-        return
+      5) # Back
+        break
         ;;
       *)
-        colorEcho "Invalid choice." red
-        sleep 2
+        colorEcho "Invalid option. Please try again." red
+        sleep 1
         ;;
     esac
   done
+}
+
+edit_tunnel() {
+    log_event "User is editing a tunnel."
+    # build a numbered list of existing iran tunnels from mapping file
+    MAP_FILE="/etc/hysteria/port_mapping.txt"
+    TUNNEL_NAMES=()
+    if [ -f "$MAP_FILE" ]; then
+      TUNNEL_NAMES=($(while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
+        case "$CFG_NAME" in
+          iran-*.yaml)
+            NAME="${CFG_NAME#iran-}"
+            NAME="${NAME%.yaml}"
+            echo "$NAME"
+            ;;
+        esac
+      done < "$MAP_FILE" | sort -u))
+    fi
+
+    if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
+      colorEcho "No tunnels found to edit." yellow
+      sleep 2
+      return
+    fi
+
+    MENU_OPTIONS=()
+    INDEX=1
+    for NAME in "${TUNNEL_NAMES[@]}"; do
+      MENU_OPTIONS+=("$INDEX | $NAME")
+      INDEX=$((INDEX + 1))
+    done
+    MENU_OPTIONS+=("B | Back")
+
+    draw_menu "Select Tunnel to Edit" "${MENU_OPTIONS[@]}"
+    read -r TUNNEL_CHOICE
+
+    if [[ "$TUNNEL_CHOICE" =~ ^[Bb]$ ]]; then
+      return
+    fi
+
+    if [[ "$TUNNEL_CHOICE" =~ ^[0-9]+$ ]]; then
+        CHOICE_INDEX=$((TUNNEL_CHOICE - 1))
+        if [ "$CHOICE_INDEX" -lt 0 ] || [ "$CHOICE_INDEX" -ge "${#TUNNEL_NAMES[@]}" ]; then
+          colorEcho "Invalid index." red
+          sleep 2
+          return
+        fi
+        TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
+    else
+        colorEcho "Invalid selection." red
+        sleep 2
+        return
+    fi
+
+    # --- Edit Logic ---
+    CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
+    if [ ! -f "$CONFIG_FILE" ]; then
+      colorEcho "Config file for '${TUNNEL_NAME}' not found." red
+      sleep 2
+      return
+    fi
+
+    colorEcho "Editing tunnel: ${TUNNEL_NAME}" magenta
+    colorEcho "Current values are shown in parentheses. Press Enter to keep the current value." blue
+
+    # Read current values
+    CURRENT_SERVER=$(grep 'server:' "$CONFIG_FILE" | awk -F'\"' '{print $2}')
+    CURRENT_AUTH=$(grep 'auth:' "$CONFIG_FILE" | awk -F'\"' '{print $2}')
+    CURRENT_SNI=$(grep 'sni:' "$CONFIG_FILE" | awk -F'\"' '{print $2}')
+    CURRENT_PORTS=$(grep -oP 'listen: 0.0.0.0:\K[0-9]+' "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')
+
+    # Get new values
+    read -rp "Enter new server IP/Domain (${CURRENT_SERVER}): " NEW_SERVER
+    NEW_SERVER=${NEW_SERVER:-$CURRENT_SERVER}
+
+    read -rp "Enter new password (${CURRENT_AUTH}): " NEW_AUTH
+    NEW_AUTH=${NEW_AUTH:-$CURRENT_AUTH}
+
+    read -rp "Enter new SNI (e.g., google.com) (${CURRENT_SNI}): " NEW_SNI
+    NEW_SNI=${NEW_SNI:-$CURRENT_SNI}
+
+    read -rp "Enter new port(s), comma-separated (${CURRENT_PORTS}): " NEW_PORTS
+    NEW_PORTS=${NEW_PORTS:-$CURRENT_PORTS}
+
+    # Validate new ports
+    IFS=',' read -ra PORT_ARRAY <<< "$NEW_PORTS"
+    for port in "${PORT_ARRAY[@]}"; do
+      if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        colorEcho "Invalid port number: $port" red
+        sleep 2
+        return # Go back to the manage_tunnels menu
+      fi
+      # Check if port is in use by another service, excluding the current tunnel's ports
+      if is_port_in_use "$port" && ! [[ ",$CURRENT_PORTS," == *",$port,"* ]]; then
+        colorEcho "Port $port is already in use by another service." red
+        sleep 2
+        return # Go back to the manage_tunnels menu
+      fi
+    done
+
+    # Update config file
+    sudo sed -i "s|server: \"$CURRENT_SERVER\"|server: \"$NEW_SERVER\"|" "$CONFIG_FILE"
+    sudo sed -i "s|auth: \"$CURRENT_AUTH\"|auth: \"$NEW_AUTH\"|" "$CONFIG_FILE"
+    sudo sed -i "s|sni: \"$CURRENT_SNI\"|sni: \"$NEW_SNI\"|" "$CONFIG_FILE"
+
+    # Rebuild forwarding sections
+    TCP_FORWARD=""
+    UDP_FORWARD=""
+    for port in "${PORT_ARRAY[@]}"; do
+        TCP_FORWARD+="  - listen: 0.0.0.0:${port}\n    remote: '0.0.0.0:${port}'\n"
+        UDP_FORWARD+="  - listen: 0.0.0.0:${port}\n    remote: '0.0.0.0:${port}'\n"
+    done
+
+    # Remove old forwarding sections and add new ones
+    sudo sed -i '/^tcpForwarding:/,$d' "$CONFIG_FILE"
+    cat <<EOF | sudo tee -a "$CONFIG_FILE" > /dev/null
+tcpForwarding:
+${TCP_FORWARD}udpForwarding:
+${UDP_FORWARD}
+EOF
+
+    # Update port_mapping.txt
+    local service_name="hysteria-${TUNNEL_NAME}.service"
+    sudo sed -i "/^iran-${TUNNEL_NAME}.yaml|/d" "$MAP_FILE"
+    echo "iran-${TUNNEL_NAME}.yaml|hysteria-${TUNNEL_NAME}|${NEW_PORTS}" | sudo tee -a "$MAP_FILE" > /dev/null
+
+    colorEcho "Tunnel '${TUNNEL_NAME}' updated. Restarting service..." blue
+    log_event "Tunnel ${TUNNEL_NAME} updated. New server: $NEW_SERVER, New ports: $NEW_PORTS."
+    sudo systemctl restart "hysteria-${TUNNEL_NAME}.service"
+    check_service_status "hysteria-${TUNNEL_NAME}.service"
+    sleep 2
+}
+
+delete_tunnel() {
+  log_event "User is deleting a tunnel."
+  MAP_FILE="/etc/hysteria/port_mapping.txt"
+  TUNNEL_NAMES=()
+  if [ -f "$MAP_FILE" ]; then
+    TUNNEL_NAMES=($(while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
+      case "$CFG_NAME" in
+        iran-*.yaml)
+          NAME="${CFG_NAME#iran-}"
+          NAME="${NAME%.yaml}"
+          echo "$NAME"
+          ;;
+      esac
+    done < "$MAP_FILE" | sort -u))
+  fi
+
+  if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
+    colorEcho "No tunnels found to delete." yellow
+    sleep 2
+    return
+  fi
+
+  MENU_OPTIONS=()
+  INDEX=1
+  for NAME in "${TUNNEL_NAMES[@]}"; do
+    MENU_OPTIONS+=("$INDEX | $NAME")
+    INDEX=$((INDEX + 1))
+  done
+  MENU_OPTIONS+=("B | Back")
+
+  draw_menu "Select Tunnel to Delete" "${MENU_OPTIONS[@]}"
+  read -r TUNNEL_CHOICE
+
+  if [[ "$TUNNEL_CHOICE" =~ ^[Bb]$ ]]; then
+    return
+  fi
+
+  if [[ "$TUNNEL_CHOICE" =~ ^[0-9]+$ ]]; then
+      CHOICE_INDEX=$((TUNNEL_CHOICE - 1))
+      if [ "$CHOICE_INDEX" -lt 0 ] || [ "$CHOICE_INDEX" -ge "${#TUNNEL_NAMES[@]}" ]; then
+        colorEcho "Invalid index." red
+        sleep 2
+        return
+      fi
+      TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
+  else
+      colorEcho "Invalid selection." red
+      sleep 2
+      return
+  fi
+
+  read -rp "Are you sure you want to delete the tunnel '${TUNNEL_NAME}'? [y/N]: " CONFIRM
+  if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+    log_event "User confirmed deletion of tunnel ${TUNNEL_NAME}."
+    colorEcho "Deleting tunnel '${TUNNEL_NAME}'..." blue
+
+    local service_name="hysteria-${TUNNEL_NAME}.service"
+    local config_file="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
+    local service_file="/etc/systemd/system/${service_name}"
+
+    # Stop and disable the service
+    sudo systemctl stop "$service_name" 2>/dev/null
+    sudo systemctl disable "$service_name" 2>/dev/null
+
+    # Remove files
+    sudo rm -f "$service_file"
+    sudo rm -f "$config_file"
+
+    # Remove from mapping
+    sudo sed -i "/^iran-${TUNNEL_NAME}.yaml|/d" "$MAP_FILE"
+
+    sudo systemctl daemon-reload
+
+    colorEcho "Tunnel '${TUNNEL_NAME}' has been deleted." green
+    log_event "Tunnel ${TUNNEL_NAME} deleted successfully."
+  else
+    colorEcho "Deletion cancelled." yellow
+    log_event "User cancelled deletion of tunnel ${TUNNEL_NAME}."
+  fi
+  sleep 2
 }
 
 # ------------------ Main Logic ------------------
