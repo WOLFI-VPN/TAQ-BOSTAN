@@ -13,6 +13,31 @@ log_event() {
 }
 
 # ------------------ Color Output Function ------------------
+
+# ------------------ Check Service Status Function ------------------
+
+# ------------------ Port-in-Use Check Function ------------------
+is_port_in_use() {
+  local port="$1"
+  if sudo ss -tuln | grep -q ":$port "; then
+    return 0 # Port is in use
+  else
+    return 1 # Port is not in use
+  fi
+}
+
+check_service_status() {
+  local service_name="$1"
+  if systemctl is-active --quiet "$service_name"; then
+    log_event "Service '$service_name' is active and running."
+    colorEcho "Service '$service_name' is active." green
+  else
+    log_event "Service '$service_name' failed to start or is inactive. Check logs with 'journalctl -u $service_name'."
+    colorEcho "Service '$service_name' is not running. Please check the logs." red
+  fi
+}
+
+
 colorEcho() {
   local text="$1"
   local color="$2"
@@ -110,46 +135,6 @@ if [ ! -f /etc/hysteria/hysteria-monitor.py ]; then
     -o /etc/hysteria/hysteria-monitor.py
   sudo chmod +x /etc/hysteria/hysteria-monitor.py
 fi
-
-# ------------------ Monitor Ports Function ------------------
-monitor_ports() {
-  log_event "User requested to monitor ports."
-  MONITOR_SCRIPT="/etc/hysteria/hysteria-monitor.py"
-
-  if ! command -v python3 &> /dev/null; then
-    colorEcho "Python 3 is not installed. Please install it to use the monitor." red
-    log_event "Port monitoring failed: Python 3 not found."
-    sleep 3
-    return
-  fi
-
-  if [ ! -f "$MONITOR_SCRIPT" ]; then
-    colorEcho "Monitor script not found at ${MONITOR_SCRIPT}." red
-    log_event "Port monitoring failed: Monitor script not found."
-    sleep 3
-    return
-  fi
-
-  colorEcho "Starting traffic monitor... Press Ctrl+C to exit." blue
-  log_event "Starting traffic monitor script."
-  sleep 2
-  clear
-
-  # Temporarily ignore Ctrl+C for the main script
-  local original_trap
-  original_trap=$(trap -p SIGINT)
-  trap '' SIGINT
-
-  # Run the monitor. The '|| true' prevents the script from exiting on error (like Ctrl+C).
-  sudo python3 "$MONITOR_SCRIPT" || true
-
-  # Restore the original trap
-  eval "$original_trap"
-
-  log_event "Traffic monitor stopped by user."
-  colorEcho "Traffic monitor stopped." blue
-  read -rp "Press Enter to return to the main menu..."
-}
 
 # ------------------ View Logs Function ------------------
 view_logs() {
@@ -278,7 +263,7 @@ restart_management_menu() {
             colorEcho "Restarting tunnel '${TUNNEL_NAME}'..." blue
             log_event "Manually restarting tunnel: ${TUNNEL_NAME}."
             sudo systemctl restart "hysteria-${TUNNEL_NAME}.service"
-            colorEcho "Tunnel '${TUNNEL_NAME}' restarted." green
+            check_service_status "hysteria-${TUNNEL_NAME}.service"
             sleep 2
         else
             colorEcho "Invalid selection." red
@@ -303,7 +288,7 @@ restart_management_menu() {
                   continue
                 fi
                 sudo systemctl restart "$SERVICE"
-                colorEcho "Restarted ${SERVICE}" green
+                check_service_status "$SERVICE"
                 RESTARTED_COUNT=$((RESTARTED_COUNT + 1))
             done
             
@@ -317,41 +302,76 @@ restart_management_menu() {
         sleep 3
         ;;
 
-      3) # Set Daily Auto-Restart Time
-        log_event "User is setting auto-restart cronjob."
-        colorEcho "Set Daily Auto-Restart Time" blue
-        colorEcho "Enter the time in 24-hour format. To remove, enter 'remove'." yellow
-        
-        read -rp "Enter hour (0-23 or 'remove'): " CRON_HOUR
-        
-        if [[ "$CRON_HOUR" == "remove" ]]; then
-          (crontab -l 2>/dev/null | grep -v "$CRON_COMMENT") | crontab -
-          colorEcho "Daily auto-restart has been removed." green
-          log_event "Cronjob for auto-restart removed."
-          sleep 2
-          continue
-        fi
+      3) # Set/Update Auto-Restart
+        while true; do
+          draw_menu "Auto-Restart Schedule" \\
+            "1 | Restart Every 6 Hours" \\
+            "2 | Restart Every 12 Hours" \\
+            "3 | Restart Every 24 Hours (at 4:00 AM)" \\
+            "4 | Custom Daily Restart Time" \\
+            "5 | Remove Auto-Restart" \\
+            "6 | Back"
 
-        read -rp "Enter minute (0-59): " CRON_MINUTE
+          read -r CRON_CHOICE
 
-        if ! [[ "$CRON_HOUR" =~ ^[0-9]+$ ]] || [ "$CRON_HOUR" -lt 0 ] || [ "$CRON_HOUR" -gt 23 ] || \
-           ! [[ "$CRON_MINUTE" =~ ^[0-9]+$ ]] || [ "$CRON_MINUTE" -lt 0 ] || [ "$CRON_MINUTE" -gt 59 ]; then
-          colorEcho "Invalid hour or minute. Please enter numbers in the correct range." red
-          log_event "Cronjob setup failed: Invalid time input."
-          sleep 2
-          continue
-        fi
-        
-        # This command finds all hysteria client services and restarts them.
-        CRON_CMD_TO_RUN="systemctl restart \\\$(systemctl list-unit-files --type=service | grep 'hysteria-.*\\\\.service' | awk '{print \\\$1}' | grep -v 'hysteria.service')"
-        CRON_JOB="$CRON_MINUTE $CRON_HOUR * * * $CRON_CMD_TO_RUN $CRON_COMMENT"
+          local CRON_JOB=""
+          local SUCCESS_MSG=""
 
-        # Remove old cron job and add new one
-        (crontab -l 2>/dev/null | grep -v "$CRON_COMMENT" ; echo "$CRON_JOB") | crontab -
-        
-        colorEcho "Auto-restart time set to ${CRON_HOUR}:${CRON_MINUTE} daily." green
-        log_event "Cronjob for auto-restart set to ${CRON_HOUR}:${CRON_MINUTE}."
-        sleep 2
+          case "$CRON_CHOICE" in
+            1) # Every 6 hours
+              CRON_JOB="0 */6 * * *"
+              SUCCESS_MSG="Auto-restart set to every 6 hours."
+              ;;
+            2) # Every 12 hours
+              CRON_JOB="0 */12 * * *"
+              SUCCESS_MSG="Auto-restart set to every 12 hours."
+              ;;
+            3) # Every 24 hours
+              CRON_JOB="0 4 * * *"
+              SUCCESS_MSG="Auto-restart set to every 24 hours at 4:00 AM."
+              ;;
+            4) # Custom Time
+              log_event "User is setting a custom auto-restart cronjob."
+              colorEcho "Enter the time in 24-hour format." yellow
+              read -rp "Enter hour (0-23): " CRON_HOUR
+              read -rp "Enter minute (0-59): " CRON_MINUTE
+
+              if ! [[ "$CRON_HOUR" =~ ^[0-9]+$ ]] || [ "$CRON_HOUR" -lt 0 ] || [ "$CRON_HOUR" -gt 23 ] || \
+                 ! [[ "$CRON_MINUTE" =~ ^[0-9]+$ ]] || [ "$CRON_MINUTE" -lt 0 ] || [ "$CRON_MINUTE" -gt 59 ]; then
+                colorEcho "Invalid hour or minute." red
+                log_event "Cronjob setup failed: Invalid custom time input."
+                sleep 2
+                continue
+              fi
+              CRON_JOB="$CRON_MINUTE $CRON_HOUR * * *"
+              SUCCESS_MSG="Auto-restart time set to ${CRON_HOUR}:${CRON_MINUTE} daily."
+              ;;
+            5) # Remove
+              (crontab -l 2>/dev/null | grep -v "$CRON_COMMENT") | crontab -
+              colorEcho "Daily auto-restart has been removed." green
+              log_event "Cronjob for auto-restart removed."
+              sleep 2
+              break # Exit the cron menu
+              ;;
+            6) # Back
+              break # Exit the cron menu
+              ;;
+            *)
+              colorEcho "Invalid choice." red
+              sleep 2
+              continue
+              ;;
+          esac
+
+          if [ -n "$CRON_JOB" ]; then
+            CRON_CMD_TO_RUN="systemctl restart \\\$(systemctl list-unit-files --type=service | grep 'hysteria-.*\\\\.service' | awk '{print \\\$1}' | grep -v 'hysteria.service')"
+            FULL_CRON_JOB="$CRON_JOB $CRON_CMD_TO_RUN $CRON_COMMENT"
+            (crontab -l 2>/dev/null | grep -v "$CRON_COMMENT" ; echo "$FULL_CRON_JOB") | crontab -
+            colorEcho "$SUCCESS_MSG" green
+            log_event "$SUCCESS_MSG"
+            sleep 2
+          fi
+        done
         ;;
       4)
         return
@@ -483,12 +503,16 @@ manage_tunnels() {
           for (( p=1; p<=PORT_FORWARD_COUNT; p++ )); do
             read -rp "Enter port #$p: " TUNNEL_PORT
 
-            TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
-    remote: '$EXISTING_REMOTE_IP:$TUNNEL_PORT'
-"
-            UDP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
-    remote: '$EXISTING_REMOTE_IP:$TUNNEL_PORT'
-"
+            # Check if port is in use
+            if is_port_in_use "$TUNNEL_PORT"; then
+              colorEcho "Port $TUNNEL_PORT is already in use. Please choose a different port." red
+              log_event "Port conflict detected for port $TUNNEL_PORT during tunnel creation."
+              p=$((p - 1)) # Ask for the same port number again
+              continue
+            fi
+
+            TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT\n    remote: '$EXISTING_REMOTE_IP:$TUNNEL_PORT'\n"
+            UDP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT\n    remote: '$EXISTING_REMOTE_IP:$TUNNEL_PORT'\n"
 
             if [ -z "$PORT_LIST" ]; then
               PORT_LIST="$TUNNEL_PORT"
@@ -512,9 +536,10 @@ EOF
             | sudo tee -a /etc/hysteria/port_mapping.txt > /dev/null
         fi
 
-        sudo systemctl restart "hysteria-${TUNNEL_NAME}"
+        sudo systemctl restart "hysteria-${TUNNEL_NAME}.service"
         log_event "Tunnel ${TUNNEL_NAME} updated successfully."
         colorEcho "Tunnel ${TUNNEL_NAME} updated successfully." green
+        check_service_status "hysteria-${TUNNEL_NAME}.service"
         sleep 2
         ;;
 
@@ -633,8 +658,8 @@ draw_menu "Server Type Selection" \
         draw_menu "Iranian Server Options" \
           "1 | Create New Tunnel" \
           "2 | Manage Tunnels" \
-          "3 | Monitor Traffic Ports" \
-          "4 | View Script Logs" \
+          "3 | View Script Logs" \
+          "4 | Restart Management" \
           "5 | Exit"
         read -rp "> " IRAN_CHOICE
         case "$IRAN_CHOICE" in
@@ -644,11 +669,11 @@ draw_menu "Server Type Selection" \
           2) 
             manage_tunnels 
             ;;
-          3) 
-            monitor_ports     
+          3)
+            view_logs
             ;;
           4)
-            view_logs
+            restart_management_menu
             ;;
           5) 
             colorEcho "Exiting..." yellow; exit 0 
@@ -900,6 +925,14 @@ if [ "$SERVER_TYPE" == "iran" ]; then
   for (( p=1; p<=PORT_FORWARD_COUNT; p++ )); do
     read -p "Enter port number #$p you want to tunnel: " TUNNEL_PORT
 
+    # Check if port is in use
+    if is_port_in_use "$TUNNEL_PORT"; then
+      colorEcho "Port $TUNNEL_PORT is already in use. Please choose a different port." red
+      log_event "Port conflict detected for port $TUNNEL_PORT during tunnel creation for '$TUNNEL_NAME'."
+      p=$((p - 1)) # Ask for the same port number again
+      continue
+    fi
+
     TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
     remote: '$REMOTE_IP:$TUNNEL_PORT'
 "
@@ -951,4 +984,5 @@ EOF
 
   log_event "Tunnel ${TUNNEL_NAME} setup completed."
   colorEcho "Tunnel ${TUNNEL_NAME} setup completed." green
+  check_service_status "hysteria-${TUNNEL_NAME}.service"
 fi
