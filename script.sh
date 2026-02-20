@@ -6,13 +6,15 @@
 #  - Install / Reinstall / Update                         #
 #  - BBR Enable                                           #
 #  - Firewall Auto Open                                   #
-#  - SpeedTest                                            #
+#  - REAL Download Speed Test (No Speedtest)             #
 #  - QR Code                                              #
 #  - Backup / Restore                                     #
 #  - Service Manager                                      #
 ############################################################
 
-### ====== CONFIG ====== ###
+########################
+#        CONFIG        #
+########################
 REPO_BASE="https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main"
 INSTALL_DIR="/opt/wolfi"
 MAIN_FILE="$INSTALL_DIR/hysteria.sh"
@@ -23,7 +25,9 @@ HYSTERIA_BIN="/usr/local/bin/hysteria"
 BACKUP_DIR="/opt/wolfi/backups"
 LOG_FILE="/opt/wolfi/install.log"
 
-### ====== COLORS ====== ###
+########################
+#        COLORS        #
+########################
 green(){ echo -e "\e[32m$1\e[0m"; }
 red(){ echo -e "\e[31m$1\e[0m"; }
 yellow(){ echo -e "\e[33m$1\e[0m"; }
@@ -43,6 +47,7 @@ fi
 prepare_dirs(){
 mkdir -p $INSTALL_DIR
 mkdir -p $BACKUP_DIR
+touch $LOG_FILE
 }
 
 detect_os(){
@@ -78,7 +83,7 @@ download_main(){
 blue "Downloading hysteria.sh from GitHub..."
 curl -fSL $REPO_BASE/hysteria.sh -o $MAIN_FILE
 if [ $? -ne 0 ]; then
-red "Download failed. Check if repo is PUBLIC."
+red "Download failed. Make sure repo is PUBLIC."
 exit 1
 fi
 chmod +x $MAIN_FILE
@@ -90,14 +95,17 @@ bash $MAIN_FILE
 }
 
 open_firewall(){
+read -p "Enter Port to open (default 443): " PORT
+PORT=${PORT:-443}
 if command -v ufw &> /dev/null; then
-ufw allow 443/tcp
-ufw allow 443/udp
+ufw allow $PORT/tcp
+ufw allow $PORT/udp
 elif command -v firewall-cmd &> /dev/null; then
-firewall-cmd --permanent --add-port=443/tcp
-firewall-cmd --permanent --add-port=443/udp
+firewall-cmd --permanent --add-port=$PORT/tcp
+firewall-cmd --permanent --add-port=$PORT/udp
 firewall-cmd --reload
 fi
+green "Firewall updated for port $PORT"
 }
 
 show_status(){
@@ -115,14 +123,6 @@ systemctl stop hysteria
 red "Service stopped."
 }
 
-enable_service(){
-systemctl enable hysteria
-}
-
-disable_service(){
-systemctl disable hysteria
-}
-
 uninstall_all(){
 systemctl stop hysteria 2>/dev/null
 systemctl disable hysteria 2>/dev/null
@@ -134,12 +134,43 @@ systemctl daemon-reload
 green "Completely removed."
 }
 
-speed_test(){
-if ! command -v speedtest &> /dev/null; then
-curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | bash 2>/dev/null
-$PKG_INSTALL speedtest 2>/dev/null
+#############################################
+# REAL DOWNLOAD SPEED TEST (NO SPEEDTEST)  #
+#############################################
+real_download_test(){
+
+echo "======================================"
+echo "     REAL SERVER DOWNLOAD TEST        "
+echo "======================================"
+
+TEST_FILE="http://speedtest.tele2.net/100MB.zip"
+TEMP_FILE="/tmp/testfile.bin"
+
+if ! command -v curl &> /dev/null; then
+$PKG_INSTALL curl
 fi
-speedtest --accept-license --accept-gdpr
+
+START_TIME=$(date +%s)
+
+curl -L $TEST_FILE -o $TEMP_FILE --silent --show-error
+
+END_TIME=$(date +%s)
+
+ELAPSED=$((END_TIME - START_TIME))
+FILE_SIZE_MB=100
+
+if [ $ELAPSED -gt 0 ]; then
+SPEED_MB=$(echo "scale=2; $FILE_SIZE_MB / $ELAPSED" | bc)
+SPEED_MBIT=$(echo "scale=2; $SPEED_MB * 8" | bc)
+
+echo ""
+green "Average Speed: $SPEED_MB MB/s"
+green "Equivalent: $SPEED_MBIT Mbps"
+else
+red "Test failed."
+fi
+
+rm -f $TEMP_FILE
 }
 
 system_stats(){
@@ -164,12 +195,12 @@ echo "Available backups:"
 ls $BACKUP_DIR
 read -p "Enter backup file name: " FILE
 tar -xzf $BACKUP_DIR/$FILE -C /
-green "Restored."
 systemctl restart hysteria
+green "Restored."
 }
 
 update_script(){
-blue "Updating from GitHub..."
+blue "Updating script from GitHub..."
 bash <(curl -s $REPO_BASE/script.sh)
 }
 
@@ -206,7 +237,7 @@ echo "5) Stop Service"
 echo "6) Service Status"
 echo "7) Enable BBR"
 echo "8) Open Firewall"
-echo "9) Speed Test"
+echo "9) REAL Download Speed Test"
 echo "10) System Stats"
 echo "11) Backup Config"
 echo "12) Restore Backup"
@@ -235,7 +266,7 @@ run_main
 6) show_status ;;
 7) enable_bbr ;;
 8) open_firewall ;;
-9) speed_test ;;
+9) detect_os; real_download_test ;;
 10) system_stats ;;
 11) backup_config ;;
 12) restore_backup ;;
