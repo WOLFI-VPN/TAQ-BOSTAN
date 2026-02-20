@@ -205,12 +205,14 @@ restart_management_menu() {
       CRON_DISPLAY="Daily Auto-Restart is Not Set"
     fi
 
-    draw_menu "Restart Management" \\
-      "1 | Manually Restart a Tunnel" \\
-      "2 | Manually Restart All Tunnels" \\
-      "3 | Set/Update Daily Auto-Restart" \\
-      "  | ($CRON_DISPLAY)" \\
+    local menu_options=(
+      "1 | Manually Restart a Tunnel"
+      "2 | Manually Restart All Tunnels"
+      "3 | Set/Update Daily Auto-Restart"
+      "  | ($CRON_DISPLAY)"
       "4 | Back"
+    )
+    draw_menu "Restart Management" "${menu_options[@]}"
 
     read -r RESTART_CHOICE
 
@@ -384,20 +386,101 @@ restart_management_menu() {
   done
 }
 
+# ------------------ View Tunnel Details Function ------------------
+view_tunnel_details() {
+  log_event "User is viewing tunnel details."
+  MAP_FILE="/etc/hysteria/port_mapping.txt"
+  TUNNEL_NAMES=()
+  if [ -f "$MAP_FILE" ]; then
+    TUNNEL_NAMES=($(while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
+      case "$CFG_NAME" in
+        iran-*.yaml)
+          NAME="${CFG_NAME#iran-}"
+          NAME="${NAME%.yaml}"
+          echo "$NAME"
+          ;;
+      esac
+    done < "$MAP_FILE" | sort -u))
+  fi
+
+  if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
+    colorEcho "No tunnels found to view." yellow
+    sleep 2
+    return
+  fi
+
+  MENU_OPTIONS=()
+  INDEX=1
+  for NAME in "${TUNNEL_NAMES[@]}"; do
+    MENU_OPTIONS+=("$INDEX | $NAME")
+    INDEX=$((INDEX + 1))
+  done
+  MENU_OPTIONS+=("B | Back")
+
+  draw_menu "Select Tunnel to View" "${MENU_OPTIONS[@]}"
+  read -r TUNNEL_CHOICE
+
+  if [[ "$TUNNEL_CHOICE" =~ ^[Bb]$ ]]; then
+    return
+  fi
+
+  if [[ "$TUNNEL_CHOICE" =~ ^[0-9]+$ ]]; then
+      CHOICE_INDEX=$((TUNNEL_CHOICE - 1))
+      if [ "$CHOICE_INDEX" -lt 0 ] || [ "$CHOICE_INDEX" -ge "${#TUNNEL_NAMES[@]}" ]; then
+        colorEcho "Invalid index." red
+        sleep 2
+        return
+      fi
+      TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
+  else
+      colorEcho "Invalid selection." red
+      sleep 2
+      return
+  fi
+
+  CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
+
+  if [ ! -f "$CONFIG_FILE" ]; then
+    colorEcho "Config file for '${TUNNEL_NAME}' not found." red
+    sleep 2
+    return
+  fi
+
+  clear
+  colorEcho "Details for tunnel: ${TUNNEL_NAME}" magenta
+  echo "-------------------------------------"
+  
+  SERVER=$(grep 'server:' "$CONFIG_FILE" | awk -F'\"' '{print $2}')
+  AUTH=$(grep 'auth:' "$CONFIG_FILE" | awk -F'\"' '{print $2}')
+  SNI=$(grep 'sni:' "$CONFIG_FILE" | awk -F'\"' '{print $2}')
+  PORTS=$(grep -oP 'listen: 0.0.0.0:\\K[0-9]+' "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')
+
+  echo "Server: $SERVER"
+  echo "Password: $AUTH"
+  echo "SNI: $SNI"
+  echo "Forwarded Ports: $PORTS"
+  
+  echo "-------------------------------------"
+  read -rp "Press Enter to return..."
+}
+
 # ------------------ Manage Tunnels Function ------------------
 manage_tunnels() {
 
   while true; do
     draw_menu "Manage Iranian Tunnels" \
-      "1 | Edit Tunnel" \
-      "2 | Delete Tunnel" \
-      "3 | Back"
+      "1 | View Tunnel Details" \
+      "2 | Edit Tunnel" \
+      "3 | Delete Tunnel" \
+      "4 | Back"
 
     read -r ACTION_CHOICE
 
     case "$ACTION_CHOICE" in
-
       1)
+        view_tunnel_details
+        ;;
+      2)
         # build a numbered list of existing iran tunnels from mapping file
         MAP_FILE="/etc/hysteria/port_mapping.txt"
         TUNNEL_NAMES=()
@@ -543,7 +626,7 @@ EOF
         sleep 2
         ;;
 
-      2)
+      3)
         # build a numbered list of existing iran tunnels from mapping file
         MAP_FILE="/etc/hysteria/port_mapping.txt"
         TUNNEL_NAMES=()
@@ -633,7 +716,7 @@ EOF
         sleep 2
         ;;
 
-      3)
+      4)
         return
         ;;
 
