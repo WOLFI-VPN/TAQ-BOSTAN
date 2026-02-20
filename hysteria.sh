@@ -2,17 +2,27 @@
 set -Eeuo pipefail
 trap 'colorEcho "Script terminated prematurely." red' ERR SIGINT SIGTERM
 
+# ------------------ Logging Function ------------------
+LOG_FILE="/var/log/hysteria_script.log"
+sudo touch $LOG_FILE
+sudo chmod 664 $LOG_FILE
+
+log_event() {
+  local message="$1"
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" | sudo tee -a $LOG_FILE > /dev/null
+}
+
 # ------------------ Color Output Function ------------------
 colorEcho() {
   local text="$1"
   local color="$2"
   case "$color" in
-    red)     echo -e "\e[31m${text}\e[0m" ;;
-    green)   echo -e "\e[32m${text}\e[0m" ;;
-    yellow)  echo -e "\e[33m${text}\e[0m" ;;
-    blue)    echo -e "\e[34m${text}\e[0m" ;;
-    magenta) echo -e "\e[35m${text}\e[0m" ;;
-    cyan)    echo -e "\e[36m${text}\e[0m" ;;
+    red)     echo -e "\e[31m❌ ${text}\e[0m" ;;
+    green)   echo -e "\e[32m✅ ${text}\e[0m" ;;
+    yellow)  echo -e "\e[33m⚠️ ${text}\e[0m" ;;
+    blue)    echo -e "\e[34mℹ️ ${text}\e[0m" ;;
+    magenta) echo -e "\e[35m✨ ${text}\e[0m" ;;
+    cyan)    echo -e "\e[36m➡️ ${text}\e[0m" ;;
     *)       echo "$text" ;;
   esac
 }
@@ -132,7 +142,7 @@ manage_tunnels() {
         fi
 
         if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
-          colorEcho "No tunnels found. Create a tunnel first." yellow
+          colorEcho "No tunnels found. You can create one from the main menu." yellow
           sleep 2
           continue
         fi
@@ -182,6 +192,7 @@ manage_tunnels() {
           continue
         fi
 
+        log_event "Attempting to edit tunnel: ${TUNNEL_NAME}"
         echo ""
         colorEcho "Leave empty to keep current value." yellow
 
@@ -249,6 +260,7 @@ EOF
         fi
 
         sudo systemctl restart "hysteria-${TUNNEL_NAME}"
+        log_event "Tunnel ${TUNNEL_NAME} updated successfully."
         colorEcho "Tunnel ${TUNNEL_NAME} updated successfully." green
         sleep 2
         ;;
@@ -271,7 +283,7 @@ EOF
         fi
 
         if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
-          colorEcho "No tunnels found. Create a tunnel first." yellow
+          colorEcho "No tunnels found. You can create one from the main menu." yellow
           sleep 2
           continue
         fi
@@ -322,6 +334,7 @@ EOF
           continue
         fi
 
+        log_event "Attempting to delete tunnel: ${TUNNEL_NAME}"
         read -rp "Are you sure you want to delete tunnel '${TUNNEL_NAME}'? [y/N]: " CONFIRM
         if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
           colorEcho "Deletion cancelled." yellow
@@ -337,6 +350,7 @@ EOF
 
         sed -i "/^iran-${TUNNEL_NAME}\.yaml|/d" /etc/hysteria/port_mapping.txt
 
+        log_event "Tunnel ${TUNNEL_NAME} deleted."
         colorEcho "Tunnel ${TUNNEL_NAME} deleted." green
         sleep 2
         ;;
@@ -605,6 +619,7 @@ fi
 
 # ------------------ Iranian Client Setup (Create New Tunnel) ------------------
 if [ "$SERVER_TYPE" == "iran" ]; then
+  log_event "Starting new Iranian tunnel creation..."
   colorEcho "Creating new Iranian tunnel..." cyan
 
   read -p "Enter a name for this tunnel (example: my-tunnel): " TUNNEL_NAME
@@ -677,5 +692,6 @@ EOF
   echo "iran-${TUNNEL_NAME}.yaml|hysteria-${TUNNEL_NAME}|${FORWARDED_PORTS}" \
     | sudo tee -a "$MAPPING_FILE" > /dev/null
 
+  log_event "Tunnel ${TUNNEL_NAME} setup completed."
   colorEcho "Tunnel ${TUNNEL_NAME} setup completed." green
 fi
