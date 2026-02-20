@@ -207,6 +207,163 @@ view_logs() {
   done
 }
 
+# ------------------ Restart Management Function ------------------
+restart_management_menu() {
+  while true; do
+    # Get current cron time for display
+    CRON_COMMENT="# Hysteria Tunnels Auto-Restart"
+    CURRENT_CRON=$(crontab -l 2>/dev/null | grep "$CRON_COMMENT" || echo "Not Set")
+    if [[ "$CURRENT_CRON" != "Not Set" ]]; then
+      CURRENT_CRON_TIME=$(echo "$CURRENT_CRON" | awk '{print $2 ":" $1}')
+      CRON_DISPLAY="Daily Auto-Restart Time: ${CURRENT_CRON_TIME}"
+    else
+      CRON_DISPLAY="Daily Auto-Restart is Not Set"
+    fi
+
+    draw_menu "Restart Management" \\
+      "1 | Manually Restart a Tunnel" \\
+      "2 | Manually Restart All Tunnels" \\
+      "3 | Set/Update Daily Auto-Restart" \\
+      "  | ($CRON_DISPLAY)" \\
+      "4 | Back"
+
+    read -r RESTART_CHOICE
+
+    case "$RESTART_CHOICE" in
+      1) # Manually Restart a Tunnel
+        log_event "Manual restart: selecting a single tunnel."
+        MAP_FILE="/etc/hysteria/port_mapping.txt"
+        TUNNEL_NAMES=()
+        if [ -f "$MAP_FILE" ]; then
+          TUNNEL_NAMES=($(while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
+            case "$CFG_NAME" in
+              iran-*.yaml)
+                NAME="${CFG_NAME#iran-}"
+                NAME="${NAME%.yaml}"
+                echo "$NAME"
+                ;;
+            esac
+          done < "$MAP_FILE" | sort -u))
+        fi
+
+        if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
+          colorEcho "No tunnels found to restart." yellow
+          sleep 2
+          continue
+        fi
+
+        MENU_OPTIONS=()
+        INDEX=1
+        for NAME in "${TUNNEL_NAMES[@]}"; do
+          MENU_OPTIONS+=("$INDEX | $NAME")
+          INDEX=$((INDEX + 1))
+        done
+        MENU_OPTIONS+=("B | Back")
+
+        draw_menu "Select Tunnel to Restart" "${MENU_OPTIONS[@]}"
+        read -r TUNNEL_CHOICE
+
+        if [[ "$TUNNEL_CHOICE" =~ ^[Bb]$ ]]; then
+          continue
+        fi
+
+        if [[ "$TUNNEL_CHOICE" =~ ^[0-9]+$ ]]; then
+            CHOICE_INDEX=$((TUNNEL_CHOICE - 1))
+            if [ "$CHOICE_INDEX" -lt 0 ] || [ "$CHOICE_INDEX" -ge "${#TUNNEL_NAMES[@]}" ]; then
+              colorEcho "Invalid index." red
+              sleep 2
+              continue
+            fi
+            TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
+            colorEcho "Restarting tunnel '${TUNNEL_NAME}'..." blue
+            log_event "Manually restarting tunnel: ${TUNNEL_NAME}."
+            sudo systemctl restart "hysteria-${TUNNEL_NAME}.service"
+            colorEcho "Tunnel '${TUNNEL_NAME}' restarted." green
+            sleep 2
+        else
+            colorEcho "Invalid selection." red
+            sleep 2
+        fi
+        ;;
+
+      2) # Manually Restart All Tunnels
+        log_event "Manual restart: restarting all tunnels."
+        colorEcho "Restarting all tunnels..." blue
+        
+        SERVICES_TO_RESTART=$(systemctl list-unit-files --type=service | grep 'hysteria-.*\\.service' | awk '{print $1}')
+        
+        if [ -z "$SERVICES_TO_RESTART" ]; then
+            colorEcho "No Hysteria tunnel services found to restart." yellow
+            log_event "Manual restart all: No services found."
+        else
+            RESTARTED_COUNT=0
+            for SERVICE in $SERVICES_TO_RESTART; do
+                # We only want to restart client tunnels, not the main server if it exists
+                if [[ "$SERVICE" == "hysteria.service" ]]; then
+                  continue
+                fi
+                sudo systemctl restart "$SERVICE"
+                colorEcho "Restarted ${SERVICE}" green
+                RESTARTED_COUNT=$((RESTARTED_COUNT + 1))
+            done
+            
+            if [ "$RESTARTED_COUNT" -eq 0 ]; then
+              colorEcho "No active client tunnels found to restart." yellow
+            else
+              colorEcho "All active tunnels have been restarted." green
+            fi
+            log_event "Manual restart all tunnels complete. ${RESTARTED_COUNT} tunnels restarted."
+        fi
+        sleep 3
+        ;;
+
+      3) # Set Daily Auto-Restart Time
+        log_event "User is setting auto-restart cronjob."
+        colorEcho "Set Daily Auto-Restart Time" blue
+        colorEcho "Enter the time in 24-hour format. To remove, enter 'remove'." yellow
+        
+        read -rp "Enter hour (0-23 or 'remove'): " CRON_HOUR
+        
+        if [[ "$CRON_HOUR" == "remove" ]]; then
+          (crontab -l 2>/dev/null | grep -v "$CRON_COMMENT") | crontab -
+          colorEcho "Daily auto-restart has been removed." green
+          log_event "Cronjob for auto-restart removed."
+          sleep 2
+          continue
+        fi
+
+        read -rp "Enter minute (0-59): " CRON_MINUTE
+
+        if ! [[ "$CRON_HOUR" =~ ^[0-9]+$ ]] || [ "$CRON_HOUR" -lt 0 ] || [ "$CRON_HOUR" -gt 23 ] || \
+           ! [[ "$CRON_MINUTE" =~ ^[0-9]+$ ]] || [ "$CRON_MINUTE" -lt 0 ] || [ "$CRON_MINUTE" -gt 59 ]; then
+          colorEcho "Invalid hour or minute. Please enter numbers in the correct range." red
+          log_event "Cronjob setup failed: Invalid time input."
+          sleep 2
+          continue
+        fi
+        
+        # This command finds all hysteria client services and restarts them.
+        CRON_CMD_TO_RUN="systemctl restart \\\$(systemctl list-unit-files --type=service | grep 'hysteria-.*\\\\.service' | awk '{print \\\$1}' | grep -v 'hysteria.service')"
+        CRON_JOB="$CRON_MINUTE $CRON_HOUR * * * $CRON_CMD_TO_RUN $CRON_COMMENT"
+
+        # Remove old cron job and add new one
+        (crontab -l 2>/dev/null | grep -v "$CRON_COMMENT" ; echo "$CRON_JOB") | crontab -
+        
+        colorEcho "Auto-restart time set to ${CRON_HOUR}:${CRON_MINUTE} daily." green
+        log_event "Cronjob for auto-restart set to ${CRON_HOUR}:${CRON_MINUTE}."
+        sleep 2
+        ;;
+      4)
+        return
+        ;;
+      *)
+        colorEcho "Invalid choice." red
+        sleep 2
+        ;;
+    esac
+  done
+}
+
 # ------------------ Manage Tunnels Function ------------------
 manage_tunnels() {
 
