@@ -23,7 +23,7 @@
 دستور اجرای اسکریپت:
 
 ```bash
- bash <(curl -Ls https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main/hysteria.sh)
+ bash <(curl -Ls https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main/script.sh)
 ```
 ## 🌟 معرفی پروژه
 
