@@ -348,6 +348,98 @@ restart_management_menu() {
   done
 }
 
+# ------------------ تابع پشتیبان‌گیری و بازیابی ------------------
+# عملکرد: منویی برای ایجاد فایل پشتیبان از کانفیگ‌ها و بازیابی آن‌ها نمایش می‌دهد.
+backup_restore_menu() {
+  local BACKUP_DIR="/root/hysteria_backups"
+  sudo mkdir -p "$BACKUP_DIR"
+
+  while true; do
+    local backup_menu_options=(
+      "1 | Create Backup"
+      "2 | Restore from Backup"
+      "3 | Back to Previous Menu"
+    )
+    draw_menu "Backup & Restore Management" "${backup_menu_options[@]}"
+    read -rp "Select an option: " BACKUP_CHOICE
+
+    case "$BACKUP_CHOICE" in
+      1) # Create Backup
+        log_event "User started creating a backup."
+        local TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+        local BACKUP_FILE="${BACKUP_DIR}/hysteria_backup_${TIMESTAMP}.tar.gz"
+        
+        colorEcho "Creating backup..." blue
+        if sudo tar -czf "$BACKUP_FILE" -C /etc hysteria; then
+          colorEcho "✅ Backup created successfully at: ${BACKUP_FILE}" green
+          log_event "Backup created: ${BACKUP_FILE}"
+        else
+          colorEcho "❌ Failed to create backup." red
+          log_event "Backup creation failed."
+        fi
+        read -rp "Press Enter to continue..."
+        ;;
+      2) # Restore from Backup
+        log_event "User started restoring from a backup."
+        mapfile -t backups < <(sudo find "$BACKUP_DIR" -name "hysteria_backup_*.tar.gz" -printf "%f\n" | sort -r)
+
+        if [ ${#backups[@]} -eq 0 ]; then
+          colorEcho "No backup files found in ${BACKUP_DIR}." yellow
+          sleep 2
+          continue
+        fi
+
+        colorEcho "Available backups:" blue
+        select backup_file in "${backups[@]}" "Cancel"; do
+          if [[ "$REPLY" == "$((${#backups[@]} + 1))" ]] || [[ "$backup_file" == "Cancel" ]]; then
+            colorEcho "Restore operation cancelled." yellow
+            break
+          elif [ -n "$backup_file" ]; then
+            local FULL_BACKUP_PATH="${BACKUP_DIR}/${backup_file}"
+            colorEcho "You are about to restore from: ${backup_file}" yellow
+            colorEcho "WARNING: This will overwrite all current Hysteria configurations!" red
+            read -rp "Are you absolutely sure? [y/N]: " CONFIRM
+
+            if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+              log_event "User confirmed to restore from ${backup_file}."
+              colorEcho "Restoring backup..." blue
+              # Restore to a temporary directory first to be safe
+              local TEMP_RESTORE_DIR=$(mktemp -d)
+              if sudo tar -xzf "$FULL_BACKUP_PATH" -C "$TEMP_RESTORE_DIR"; then
+                # Now copy the files over
+                sudo rsync -av --delete "${TEMP_RESTORE_DIR}/hysteria/" /etc/hysteria/
+                sudo rm -rf "$TEMP_RESTORE_DIR"
+                colorEcho "✅ Restore completed successfully." green
+                colorEcho "Please restart tunnels manually for changes to take effect." yellow
+                log_event "Restore from ${backup_file} completed."
+                sudo systemctl daemon-reload
+              else
+                colorEcho "❌ Failed to restore backup." red
+                log_event "Restore from ${backup_file} failed."
+                sudo rm -rf "$TEMP_RESTORE_DIR"
+              fi
+            else
+              colorEcho "Restore operation cancelled." yellow
+              log_event "User cancelled the restore operation."
+            fi
+            read -rp "Press Enter to continue..."
+            break
+          else
+            colorEcho "Invalid selection. Please try again." red
+          fi
+        done
+        ;;
+      3) # Back
+        break
+        ;;
+      *)
+        colorEcho "Invalid option. Please try again." red
+        sleep 1
+        ;;
+    esac
+  done
+}
+
 # ------------------ View Tunnel Details Function ------------------
 view_tunnel_details() {
   log_event "User is viewing tunnel details."
@@ -424,6 +516,13 @@ view_tunnel_details() {
   
   echo "-------------------------------------"
   read -rp "Press Enter to return..."
+}
+
+# ------------------ تابع نمایش وضعیت پیشرفته ------------------
+# عملکرد: وضعیت دقیق هر تونل شامل وضعیت سرویس، مصرف منابع و لاگ‌ها را نمایش می‌دهد.
+view_advanced_status() {
+  colorEcho "This feature is under development." yellow
+  sleep 2
 }
 
 # ------------------ Manage Tunnels Function ------------------
@@ -743,7 +842,8 @@ main() {
             "2 | Manage Tunnels"
             "3 | View Script Logs"
             "4 | Restart Management"
-            "5 | Back to Main Menu"
+            "5 | Backup & Restore"
+            "6 | Back to Main Menu"
           )
           draw_menu "Iranian Server Options" "${iran_menu_options[@]}"
           read -rp "> " IRAN_CHOICE
@@ -837,7 +937,10 @@ EOF
             4) # Restart Management
               restart_management_menu
               ;;
-            5) # Back to Main Menu
+            5) # Backup & Restore
+              backup_restore_menu
+              ;;
+            6) # Back to Main Menu
               break
               ;;
             *)
