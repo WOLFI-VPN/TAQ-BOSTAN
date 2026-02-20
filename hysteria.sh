@@ -542,7 +542,7 @@ view_advanced_status() {
     
     # More reliable way to check status by parsing the full 'systemctl status' output
     local status_output
-    status_output=$(systemctl status "$service_name" 2>/dev/null)
+    status_output=$(systemctl status "$service_name" 2>/dev/null || true)
 
     if echo "$status_output" | grep -q "Active: active"; then
       colorEcho "  Status: Active" green
