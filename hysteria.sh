@@ -13,35 +13,6 @@ log_event() {
 }
 
 # ------------------ Color Output Function ------------------
-
-# ------------------ Check Service Status Function ------------------
-
-# ------------------ Port-in-Use Check Function ------------------
-is_port_in_use() {
-  local port="$1"
-  if sudo ss -tuln | grep -q ":$port "; then
-    return 0 # Port is in use
-  else
-    return 1 # Port is not in use
-  fi
-}
-
-# ------------------ Script Entry Point ------------------
-main
-}
-
-check_service_status() {
-  local service_name="$1"
-  if systemctl is-active --quiet "$service_name"; then
-    log_event "Service '$service_name' is active and running."
-    colorEcho "Service '$service_name' is active." green
-  else
-    log_event "Service '$service_name' failed to start or is inactive. Check logs with 'journalctl -u $service_name'."
-    colorEcho "Service '$service_name' is not running. Please check the logs." red
-  fi
-}
-
-
 colorEcho() {
   local text="$1"
   local color="$2"
@@ -55,6 +26,29 @@ colorEcho() {
     *)       echo "$text" ;;
   esac
 }
+
+# ------------------ Port-in-Use Check Function ------------------
+is_port_in_use() {
+  local port="$1"
+  if sudo ss -tuln | grep -q ":$port "; then
+    return 0 # Port is in use
+  else
+    return 1 # Port is not in use
+  fi
+}
+
+# ------------------ Check Service Status Function ------------------
+check_service_status() {
+  local service_name="$1"
+  if systemctl is-active --quiet "$service_name"; then
+    log_event "Service '$service_name' is active and running."
+    colorEcho "Service '$service_name' is active." green
+  else
+    log_event "Service '$service_name' failed to start or is inactive. Check logs with 'journalctl -u $service_name'."
+    colorEcho "Service '$service_name' is not running. Please check the logs." red
+  fi
+}
+
 # ------------------ draw_menu ------------------
 draw_menu() {
   local title="$1"
@@ -99,46 +93,6 @@ draw_menu() {
   echo -e "${CYAN}${border_bottom}${line}${border_bottom_right}${RESET}"
   echo -ne "${WHITE}> ${RESET}"
 }
-
-# ------------------ Initialization ------------------
-ARCH=$(uname -m)
-HYSTERIA_VERSION_AMD64="https://github.com/apernet/hysteria/releases/download/app%2Fv2.6.1/hysteria-linux-amd64"
-HYSTERIA_VERSION_ARM="https://github.com/apernet/hysteria/releases/download/app%2Fv2.6.1/hysteria-linux-arm"
-HYSTERIA_VERSION_ARM64="https://github.com/apernet/hysteria/releases/download/app%2Fv2.6.1/hysteria-linux-arm64"
-
-case "$ARCH" in
-  x86_64)   DOWNLOAD_URL="$HYSTERIA_VERSION_AMD64" ;;
-  armv7l|armv6l) DOWNLOAD_URL="$HYSTERIA_VERSION_ARM" ;;
-  aarch64)  DOWNLOAD_URL="$HYSTERIA_VERSION_ARM64" ;;
-  *)
-    colorEcho "Unsupported architecture: $ARCH" red
-    exit 1
-    ;;
-esac
-
-if [ -f "/usr/local/bin/hysteria" ]; then
- colorEcho "Hysteria binary already exists at /usr/local/bin/hysteria. Skipping download." yellow
- else
- colorEcho "Downloading Hysteria binary for: $ARCH" cyan
- if ! curl -fsSL "$DOWNLOAD_URL" -o hysteria; then
-   colorEcho "Failed to download hysteria binary." red
-   exit 1
- fi
- chmod +x hysteria
- sudo mv hysteria /usr/local/bin/
- fi
-sudo mkdir -p /etc/hysteria/
-MAPPING_FILE="/etc/hysteria/port_mapping.txt"
-if [ ! -f "$MAPPING_FILE" ]; then
-  sudo touch "$MAPPING_FILE"
-fi
-sudo mkdir -p /var/log/hysteria/
-
-if [ ! -f /etc/hysteria/hysteria-monitor.py ]; then
-  sudo curl -fsSL https://raw.githubusercontent.com/ParsaKSH/TAQ-BOSTAN/main/hysteria-monitor.py \
-    -o /etc/hysteria/hysteria-monitor.py
-  sudo chmod +x /etc/hysteria/hysteria-monitor.py
-fi
 
 # ------------------ View Logs Function ------------------
 view_logs() {
@@ -283,7 +237,7 @@ restart_management_menu() {
         log_event "Manual restart: restarting all tunnels."
         colorEcho "Restarting all tunnels..." blue
         
-        SERVICES_TO_RESTART=$(systemctl list-unit-files --type=service | grep 'hysteria-.*\\.service' | awk '{print $1}')
+        SERVICES_TO_RESTART=$(systemctl list-unit-files --type=service | grep 'hysteria-.*\.service' | awk '{print $1}')
         
         if [ -z "$SERVICES_TO_RESTART" ]; then
             colorEcho "No Hysteria tunnel services found to restart." yellow
@@ -461,7 +415,7 @@ view_tunnel_details() {
   SERVER=$(grep 'server:' "$CONFIG_FILE" | awk -F'\"' '{print $2}')
   AUTH=$(grep 'auth:' "$CONFIG_FILE" | awk -F'\"' '{print $2}')
   SNI=$(grep 'sni:' "$CONFIG_FILE" | awk -F'\"' '{print $2}')
-  PORTS=$(grep -oP 'listen: 0.0.0.0:\\K[0-9]+' "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')
+  PORTS=$(grep -oP 'listen: 0.0.0.0:\K[0-9]+' "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')
 
   echo "Server: $SERVER"
   echo "Password: $AUTH"
@@ -562,9 +516,9 @@ manage_tunnels() {
         echo ""
         colorEcho "Leave empty to keep current value." yellow
 
-        CURRENT_SERVER=$(grep 'server:' "$CONFIG_FILE" | cut -d'"' -f2)
-        CURRENT_AUTH=$(grep 'auth:' "$CONFIG_FILE" | cut -d'"' -f2)
-        CURRENT_SNI=$(grep 'sni:' "$CONFIG_FILE" | cut -d'"' -f2)
+        CURRENT_SERVER=$(grep 'server:' "$CONFIG_FILE" | cut -d'\"' -f2)
+        CURRENT_AUTH=$(grep 'auth:' "$CONFIG_FILE" | cut -d'\"' -f2)
+        CURRENT_SNI=$(grep 'sni:' "$CONFIG_FILE" | cut -d'\"' -f2)
 
         read -rp "Server [$CURRENT_SERVER]: " NEW_SERVER
         read -rp "Password [$CURRENT_AUTH]: " NEW_PASSWORD
@@ -654,7 +608,7 @@ EOF
         fi
 
         if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
-          colorEcho "No tunnels found. You can create one from the main menu." yellow
+          colorEcho "No tunnels found to delete." yellow
           sleep 2
           continue
         fi
@@ -684,7 +638,7 @@ EOF
             TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
             ;;
           [Ee])
-            read -rp "Enter tunnel name to delete: " TUNNEL_NAME
+            read -rp "Enter tunnel name (example: my-tunnel): " TUNNEL_NAME
             ;;
           [Bb])
             continue
@@ -696,40 +650,30 @@ EOF
             ;;
         esac
 
-        CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
-        SERVICE_FILE="/etc/systemd/system/hysteria-${TUNNEL_NAME}.service"
-
-        if [ ! -f "$CONFIG_FILE" ]; then
-          colorEcho "Tunnel does not exist." red
-          sleep 2
-          continue
-        fi
-
-        log_event "Attempting to delete tunnel: ${TUNNEL_NAME}"
         read -rp "Are you sure you want to delete tunnel '${TUNNEL_NAME}'? [y/N]: " CONFIRM
-        if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+
+        if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+          log_event "User confirmed deletion of tunnel: ${TUNNEL_NAME}"
+          sudo systemctl stop "hysteria-${TUNNEL_NAME}.service"
+          sudo systemctl disable "hysteria-${TUNNEL_NAME}.service"
+          sudo rm "/etc/systemd/system/hysteria-${TUNNEL_NAME}.service"
+          sudo rm "/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
+          
+          # Use sed's in-place editing with a backup for safety, and handle the delimiter
+          sudo sed -i.bak -e "/^iran-${TUNNEL_NAME}\.yaml|/d" /etc/hysteria/port_mapping.txt
+
+          sudo systemctl daemon-reload
+          log_event "Tunnel ${TUNNEL_NAME} deleted successfully."
+          colorEcho "Tunnel ${TUNNEL_NAME} deleted successfully." green
+        else
+          log_event "User cancelled deletion of tunnel: ${TUNNEL_NAME}"
           colorEcho "Deletion cancelled." yellow
-          sleep 2
-          continue
         fi
-
-        sudo systemctl stop "hysteria-${TUNNEL_NAME}"
-        sudo systemctl disable "hysteria-${TUNNEL_NAME}"
-        sudo rm -f "$CONFIG_FILE"
-        sudo rm -f "$SERVICE_FILE"
-        sudo systemctl daemon-reload
-
-        sed -i "/^iran-${TUNNEL_NAME}\.yaml|/d" /etc/hysteria/port_mapping.txt
-
-        log_event "Tunnel ${TUNNEL_NAME} deleted."
-        colorEcho "Tunnel ${TUNNEL_NAME} deleted." green
         sleep 2
         ;;
-
       4)
         return
         ;;
-
       *)
         colorEcho "Invalid choice." red
         sleep 2
@@ -738,8 +682,49 @@ EOF
   done
 }
 
-# ------------------ Main Loop ------------------
+# ------------------ Main Logic ------------------
 main() {
+  # Initialization
+  ARCH=$(uname -m)
+  HYSTERIA_VERSION_AMD64="https://github.com/apernet/hysteria/releases/download/app%2Fv2.6.1/hysteria-linux-amd64"
+  HYSTERIA_VERSION_ARM="https://github.com/apernet/hysteria/releases/download/app%2Fv2.6.1/hysteria-linux-arm"
+  HYSTERIA_VERSION_ARM64="https://github.com/apernet/hysteria/releases/download/app%2Fv2.6.1/hysteria-linux-arm64"
+
+  case "$ARCH" in
+    x86_64)   DOWNLOAD_URL="$HYSTERIA_VERSION_AMD64" ;;
+    armv7l|armv6l) DOWNLOAD_URL="$HYSTERIA_VERSION_ARM" ;;
+    aarch64)  DOWNLOAD_URL="$HYSTERIA_VERSION_ARM64" ;;
+    *)
+      colorEcho "Unsupported architecture: $ARCH" red
+      exit 1
+      ;;
+  esac
+
+  if [ -f "/usr/local/bin/hysteria" ]; then
+   colorEcho "Hysteria binary already exists at /usr/local/bin/hysteria. Skipping download." yellow
+   else
+   colorEcho "Downloading Hysteria binary for: $ARCH" cyan
+   if ! curl -fsSL "$DOWNLOAD_URL" -o hysteria; then
+     colorEcho "Failed to download hysteria binary." red
+     exit 1
+   fi
+   chmod +x hysteria
+   sudo mv hysteria /usr/local/bin/
+   fi
+  sudo mkdir -p /etc/hysteria/
+  MAPPING_FILE="/etc/hysteria/port_mapping.txt"
+  if [ ! -f "$MAPPING_FILE" ]; then
+    sudo touch "$MAPPING_FILE"
+  fi
+  sudo mkdir -p /var/log/hysteria/
+
+  if [ ! -f /etc/hysteria/hysteria-monitor.py ]; then
+    sudo curl -fsSL https://raw.githubusercontent.com/ParsaKSH/TAQ-BOSTAN/main/hysteria-monitor.py \
+      -o /etc/hysteria/hysteria-monitor.py
+    sudo chmod +x /etc/hysteria/hysteria-monitor.py
+  fi
+
+  # Main Menu Loop
   while true; do
     local main_menu_options=(
       "1 | Setup Iranian Server"
@@ -747,15 +732,124 @@ main() {
       "3 | Exit"
     )
     draw_menu "Server Type Selection" "${main_menu_options[@]}"
-    read -r SERVER_CHOICE
+    read -rp "> " SERVER_TYPE
 
-    case "$SERVER_CHOICE" in
-      1) # Iranian Server
-        iran_server_menu
+    case "$SERVER_TYPE" in
+      1)
+        # Iranian Server Menu
+        while true; do
+          local iran_menu_options=(
+            "1 | Create New Tunnel"
+            "2 | Manage Tunnels"
+            "3 | View Script Logs"
+            "4 | Restart Management"
+            "5 | Back to Main Menu"
+          )
+          draw_menu "Iranian Server Options" "${iran_menu_options[@]}"
+          read -rp "> " IRAN_CHOICE
+
+          case "$IRAN_CHOICE" in
+            1) # Create New Tunnel
+              log_event "User selected to create a new tunnel."
+              read -rp "Enter a name for the tunnel (e.g., my-tunnel): " TUNNEL_NAME
+
+              if [ -f "/etc/hysteria/iran-${TUNNEL_NAME}.yaml" ]; then
+                colorEcho "A tunnel with this name already exists." red
+                sleep 2
+                continue
+              fi
+
+              read -rp "Enter server address (IP or domain): " SERVER_ADDR
+              read -rp "Enter a password: " PASSWORD
+              read -rp "Enter SNI (Server Name Indication): " SNI
+              read -rp "How many ports do you want to forward? " PORT_FORWARD_COUNT
+
+              TCP_FORWARD=""
+              UDP_FORWARD=""
+              PORT_LIST=""
+
+              for (( p=1; p<=PORT_FORWARD_COUNT; p++ )); do
+                read -rp "Enter port #$p: " TUNNEL_PORT
+                
+                if is_port_in_use "$TUNNEL_PORT"; then
+                  colorEcho "Port $TUNNEL_PORT is already in use. Please choose a different port." red
+                  log_event "Port conflict detected for port $TUNNEL_PORT during tunnel creation."
+                  p=$((p - 1)) # Ask for the same port number again
+                  continue
+                fi
+
+                TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT\n    remote: '0.0.0.0:$TUNNEL_PORT'\n"
+                UDP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT\n    remote: '0.0.0.0:$TUNNEL_PORT'\n"
+
+                if [ -z "$PORT_LIST" ]; then
+                  PORT_LIST="$TUNNEL_PORT"
+                else
+                  PORT_LIST="$PORT_LIST,$TUNNEL_PORT"
+                fi
+              done
+
+              CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
+              SERVICE_FILE="/etc/systemd/system/hysteria-${TUNNEL_NAME}.service"
+
+              cat <<EOF | sudo tee "$CONFIG_FILE" > /dev/null
+server: "$SERVER_ADDR"
+auth: "$PASSWORD"
+sni: "$SNI"
+tcpForwarding:
+${TCP_FORWARD}
+udpForwarding:
+${UDP_FORWARD}
+EOF
+
+              cat <<EOF | sudo tee "$SERVICE_FILE" > /dev/null
+[Unit]
+Description=Hysteria Tunnel (iran-${TUNNEL_NAME})
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hysteria -c ${CONFIG_FILE} client
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+              echo "iran-${TUNNEL_NAME}.yaml|hysteria-${TUNNEL_NAME}|${PORT_LIST}" \
+                | sudo tee -a /etc/hysteria/port_mapping.txt > /dev/null
+
+              sudo systemctl daemon-reload
+              sudo systemctl enable "hysteria-${TUNNEL_NAME}.service"
+              sudo systemctl start "hysteria-${TUNNEL_NAME}.service"
+
+              log_event "Tunnel '${TUNNEL_NAME}' created and started successfully."
+              colorEcho "Tunnel '${TUNNEL_NAME}' created and started successfully." green
+              check_service_status "hysteria-${TUNNEL_NAME}.service"
+              sleep 2
+              ;;
+            2) # Manage Tunnels
+              manage_tunnels
+              ;;
+            3) # View Logs
+              view_logs
+              ;;
+            4) # Restart Management
+              restart_management_menu
+              ;;
+            5) # Back to Main Menu
+              break
+              ;;
+            *)
+              colorEcho "Invalid choice." red
+              sleep 2
+              ;;
+          esac
+        done
         ;;
       2) # Foreign Server
-        SERVER_TYPE="foreign"
-        setup_server
+        colorEcho "Foreign server setup is not yet implemented." yellow
+        sleep 2
         ;;
       3) # Exit
         colorEcho "Exiting script." blue
@@ -769,330 +863,5 @@ main() {
   done
 }
 
-iran_server_menu() {
-  while true; do
-    local iran_menu_options=(
-      "1 | Create New Tunnel"
-      "2 | Manage Tunnels"
-      "3 | View Script Logs"
-      "4 | Restart Management"
-      "5 | Back to Main Menu"
-    )
-    draw_menu "Iranian Server Options" "${iran_menu_options[@]}"
-    read -rp "> " IRAN_CHOICE
-
-    case "$IRAN_CHOICE" in
-      1) # Create New Tunnel
-        SERVER_TYPE="iran"
-        setup_server
-        ;;
-      2) # Manage Tunnels
-        manage_tunnels
-        ;;
-      3) # View Logs
-        view_logs
-        ;;
-      4) # Restart Management
-        restart_management_menu
-        ;;
-      5) # Back to Main Menu
-        return
-        ;;
-      *)
-        colorEcho "Invalid choice." red
-        sleep 2
-        ;;
-    esac
-  done
-}
-
-setup_server() {
-
-# ------------------ IP Version Menu (Only for Iran) ------------------
-if [ "$SERVER_TYPE" == "iran" ]; then
-  while true; do
-    # Scan for existing tunnels and find the next available number using glob
-  NEXT_TUNNEL=1
-while [ -f "/etc/hysteria/iran-config${NEXT_TUNNEL}.yaml" ]; do
-  NEXT_TUNNEL=$((NEXT_TUNNEL + 1))
-done
-    shopt -u nullglob
-    
-    colorEcho "Next available tunnel number: $NEXT_TUNNEL" cyan
-    
-    draw_menu "IP Version Selection" \
-      "1 | IPv4" \
-      "2 | IPv6" \
-      "3 | Exit"
-    read -r IP_VERSION_CHOICE
-
-    case "$IP_VERSION_CHOICE" in
-      1)
-        REMOTE_IP="0.0.0.0"
-        export NEXT_TUNNEL
-        break
-        ;;
-      2)
-        REMOTE_IP="[::]"
-        export NEXT_TUNNEL
-        break
-        ;;
-      3)
-        # Return to previous menu
-        continue 2
-        ;;
-      *)
-        colorEcho "Invalid selection. Please enter 1, 2, or 3." red
-        ;;
-    esac
-  done
-fi
-
-# ------------------ Obfuscation Option ------------------
-read -p "Do you want to enable Obfuscation (obfs)? [y/N]: " ENABLE_OBFS
-ENABLE_OBFS=$(echo "$ENABLE_OBFS" | tr '[:upper:]' '[:lower:]')
-
-if [[ "$ENABLE_OBFS" == "y" || "$ENABLE_OBFS" == "yes" ]]; then
-  OBFS_CONFIG=$(cat <<EOF
-obfs:
-  type: salamander
-  salamander:
-    password: "__REPLACE_PASSWORD__"
-EOF
-)
-else
-  OBFS_CONFIG=""
-fi
-
-# ------------------ QUIC Settings Based on Usage ------------------
-draw_menu "Expected Simultaneous Users" \
-  "1 | 1 to 50 users (Light load)" \
-  "2 | 50 to 100 users (Medium load)" \
-  "3 | 100 to 300 users (Heavy load)"
-read -r USAGE_CHOICE
-
-case "$USAGE_CHOICE" in
-  1)
-    QUIC_SETTINGS=$(cat <<EOF
-quic:
-  initStreamReceiveWindow: 25165824
-  maxStreamReceiveWindow: 50331648
-  initConnReceiveWindow: 50331648
-  maxConnReceiveWindow: 100663296
-  maxIdleTimeout: 15s
-  keepAliveInterval: 10s
-  maxIncomingStreams: 4096
-  disablePathMTUDiscovery: false
-EOF
-)
-    ;;
-  2)
-    QUIC_SETTINGS=$(cat <<EOF
-quic:
-  initStreamReceiveWindow: 50331648
-  maxStreamReceiveWindow: 100663296
-  initConnReceiveWindow: 100663296
-  maxConnReceiveWindow: 201326592
-  maxIdleTimeout: 15s
-  keepAliveInterval: 10s
-  maxIncomingStreams: 8192
-  disablePathMTUDiscovery: false
-EOF
-)
-    ;;
-  3)
-    QUIC_SETTINGS=$(cat <<EOF
-quic:
-  initStreamReceiveWindow: 100663296
-  maxStreamReceiveWindow: 201326592
-  initConnReceiveWindow: 201326592
-  maxConnReceiveWindow: 402653184
-  maxIdleTimeout: 15s
-  keepAliveInterval: 10s
-  maxIncomingStreams: 24576
-  disablePathMTUDiscovery: false
-EOF
-)
-    ;;
-  *)
-    echo "Invalid option. Defaulting to 1-50 users (light load)."
-    QUIC_SETTINGS=$(cat <<EOF
-quic:
-  initStreamReceiveWindow: 25165824
-  maxStreamReceiveWindow: 50331648
-  initConnReceiveWindow: 50331648
-  maxConnReceiveWindow: 100663296
-  maxIdleTimeout: 15s
-  keepAliveInterval: 10s
-  maxIncomingStreams: 4096
-  disablePathMTUDiscovery: false
-EOF
-)
-    ;;
-esac
-
-# ------------------ Foreign Server Setup ------------------
-if [ "$SERVER_TYPE" == "foreign" ]; then
-  colorEcho "Setting up foreign server..." green
-
-  if ! command -v openssl &> /dev/null; then
-    sudo apt update -y && sudo apt install -y openssl
-  fi
-
-  colorEcho "Generating self-signed certificate..." cyan
-  sudo openssl req -x509 -nodes -days 3650 -newkey ed25519 \
-    -keyout /etc/hysteria/self.key \
-    -out /etc/hysteria/self.crt \
-    -subj "/CN=myserver"
-  sudo chmod 600 /etc/hysteria/self.*
-
-  while true; do
-    read -p "Enter Hysteria port ex.(443) or (1-65535): " H_PORT
-    if [[ "$H_PORT" =~ ^[0-9]+$ ]] && (( H_PORT > 0 && H_PORT < 65536 )); then
-      break
-    else
-      colorEcho "Invalid port. Try again." red
-    fi
-  done
-
-  while true; do
-    read -p "Enter password: " H_PASSWORD
-    if [[ -z "$H_PASSWORD" ]]; then
-      colorEcho "Password cannot be empty. Please enter a valid password." red
-    else
-      break
-    fi
-  done
-
-  cat << EOF | sudo tee /etc/hysteria/server-config.yaml > /dev/null
-listen: ":$H_PORT"
-tls:
-  cert: /etc/hysteria/self.crt
-  key: /etc/hysteria/self.key
-auth:
-  type: password
-  password: "$H_PASSWORD"
-$(echo "$OBFS_CONFIG" | sed "s/__REPLACE_PASSWORD__/$H_PASSWORD/")
-$(echo "$QUIC_SETTINGS")
-speedTest: true
-EOF
-
-  cat << EOF | sudo tee /etc/systemd/system/hysteria.service > /dev/null
-[Unit]
-Description=Hysteria2 Tunnel Service
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/server-config.yaml
-Restart=always
-RestartSec=5
-LimitNOFILE=1048576
-StandardOutput=append:/var/log/hysteria.log
-StandardError=append:/var/log/hysteria.err
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now hysteria
-  sudo systemctl reload-or-restart hysteria
-  CRON_CMD='0 4 * * * /usr/bin/systemctl restart hysteria'
-  TMP_FILE=$(mktemp)
-
-  crontab -l 2>/dev/null | grep -vF "$CRON_CMD" > "$TMP_FILE" || true
-  echo "$CRON_CMD" >> "$TMP_FILE"
-  crontab "$TMP_FILE"
-  rm -f "$TMP_FILE"
-
-  colorEcho "Foreign server setup completed." green
-fi
-
-# ------------------ Iranian Client Setup (Create New Tunnel) ------------------
-if [ "$SERVER_TYPE" == "iran" ]; then
-  log_event "Starting new Iranian tunnel creation..."
-  colorEcho "Creating new Iranian tunnel..." cyan
-
-  read -p "Enter a name for this tunnel (example: my-tunnel): " TUNNEL_NAME
-
-  read -p "Enter IP Address or Domain for Foreign server: " SERVER_ADDRESS
-  read -p "Hysteria Port ex.(443): " PORT
-
-  while true; do
-    read -p "Password: " PASSWORD
-    [[ -n "$PASSWORD" ]] && break
-    colorEcho "Password cannot be empty." red
-  done
-
-  read -p "SNI ex.(google.com): " SNI
-  read -p "How many ports do you have for forwarding? " PORT_FORWARD_COUNT
-
-  TCP_FORWARD=""
-  UDP_FORWARD=""
-  FORWARDED_PORTS=""
-
-  for (( p=1; p<=PORT_FORWARD_COUNT; p++ )); do
-    read -p "Enter port number #$p you want to tunnel: " TUNNEL_PORT
-
-    # Check if port is in use
-    if is_port_in_use "$TUNNEL_PORT"; then
-      colorEcho "Port $TUNNEL_PORT is already in use. Please choose a different port." red
-      log_event "Port conflict detected for port $TUNNEL_PORT during tunnel creation for '$TUNNEL_NAME'."
-      p=$((p - 1)) # Ask for the same port number again
-      continue
-    fi
-
-    TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
-    remote: '$REMOTE_IP:$TUNNEL_PORT'
-"
-    UDP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
-    remote: '$REMOTE_IP:$TUNNEL_PORT'
-"
-
-    FORWARDED_PORTS="${FORWARDED_PORTS:+$FORWARDED_PORTS,}$TUNNEL_PORT"
-  done
-
-  CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
-  SERVICE_FILE="/etc/systemd/system/hysteria-${TUNNEL_NAME}.service"
-
-  cat <<EOF | sudo tee "$CONFIG_FILE" > /dev/null
-server: "$SERVER_ADDRESS:$PORT"
-auth: "$PASSWORD"
-tls:
-  sni: "$SNI"
-  insecure: true
-$(echo "$OBFS_CONFIG" | sed "s/__REPLACE_PASSWORD__/$PASSWORD/")
-$(echo "$QUIC_SETTINGS")
-tcpForwarding:
-$TCP_FORWARD
-udpForwarding:
-$UDP_FORWARD
-EOF
-
-  cat <<EOF | sudo tee "$SERVICE_FILE" > /dev/null
-[Unit]
-Description=Hysteria2 Client $TUNNEL_NAME
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/hysteria client -c "$CONFIG_FILE"
-Restart=always
-RestartSec=5
-LimitNOFILE=1048576
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now hysteria-"${TUNNEL_NAME}"
-
-  echo "iran-${TUNNEL_NAME}.yaml|hysteria-${TUNNEL_NAME}|${FORWARDED_PORTS}" \
-    | sudo tee -a "$MAPPING_FILE" > /dev/null
-
-  log_event "Tunnel ${TUNNEL_NAME} setup completed."
-  colorEcho "Tunnel ${TUNNEL_NAME} setup completed." green
-  check_service_status "hysteria-${TUNNEL_NAME}.service"
-fi
+# ------------------ Script Entry Point ------------------
+main
