@@ -1006,26 +1006,43 @@ EOF
       2) # Foreign Server
         # Foreign Server Setup
         log_event "User selected to set up a foreign server."
-        colorEcho "در حال راه اندازی سرور Hysteria در سرور خارج." blue
+        colorEcho "Starting Foreign Server Setup..." blue
 
         # Check if a server config already exists
         if [ -f "/etc/hysteria/kharej-server.yaml" ]; then
-          colorEcho "یک فایل کانفیگ برای سرور خارج از قبل وجود دارد." yellow
-          read -rp "آیا می‌خواهید آن را بازنویسی کنید؟ [y/N]: " OVERWRITE
+          colorEcho "A config file for the foreign server already exists." yellow
+          read -rp "Do you want to overwrite it? [y/N]: " OVERWRITE
           if [[ ! "$OVERWRITE" =~ ^[Yy]$ ]]; then
-            colorEcho "راه اندازی لغو شد." yellow
+            colorEcho "Setup cancelled." yellow
             sleep 2
             continue
           fi
           log_event "User chose to overwrite existing foreign server config."
         fi
 
-        read -rp "نام دامنه برای این سرور را وارد کنید (برای گواهی TLS): " SERVER_DOMAIN
-        read -rp "رمز عبور برای سرور را وارد کنید: " SERVER_PASSWORD
-        read -rp "پورتی که سرور روی آن گوش دهد را وارد کنید (مثال: 443): " SERVER_PORT
+        read -rp "Enter the domain for this server (for the TLS certificate): " SERVER_DOMAIN
+        if [ -z "$SERVER_DOMAIN" ]; then
+            colorEcho "Server domain cannot be empty." red
+            sleep 2
+            continue
+        fi
+
+        read -rp "Enter the password for the server: " SERVER_PASSWORD
+        if [ -z "$SERVER_PASSWORD" ]; then
+            colorEcho "Server password cannot be empty." red
+            sleep 2
+            continue
+        fi
+
+        read -rp "Enter the port for the server to listen on (e.g., 443): " SERVER_PORT
+        if ! [[ "$SERVER_PORT" =~ ^[0-9]+$ ]] || [ "$SERVER_PORT" -lt 1 ] || [ "$SERVER_PORT" -gt 65535 ]; then
+            colorEcho "Invalid port number." red
+            sleep 2
+            continue
+        fi
 
         if is_port_in_use "$SERVER_PORT"; then
-          colorEcho "پورت $SERVER_PORT در حال استفاده است. لطفا پورت دیگری انتخاب کنید." red
+          colorEcho "Port $SERVER_PORT is already in use. Please choose another port." red
           log_event "Port conflict detected for port $SERVER_PORT during foreign server setup."
           sleep 2
           continue
