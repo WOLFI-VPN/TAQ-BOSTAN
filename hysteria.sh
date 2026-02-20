@@ -546,7 +546,7 @@ view_advanced_status() {
         status_output="" # Ensure variable is empty on failure
     fi
 
-    if echo "$status_output" | grep -q "Active: active"; then
+    if [ -n "$status_output" ] && echo "$status_output" | grep -q "Active: active"; then
       colorEcho "  Status: Active" green
       
       # Fetch detailed status from the captured output
