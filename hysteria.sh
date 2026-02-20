@@ -1020,7 +1020,7 @@ EOF
           log_event "User chose to overwrite existing foreign server config."
         fi
 
-        read -rp "Enter the domain for this server (for the TLS certificate): " SERVER_DOMAIN
+        read -rp "Enter the ip for this server: " SERVER_DOMAIN
         if [ -z "$SERVER_DOMAIN" ]; then
             colorEcho "Server domain cannot be empty." red
             sleep 2
