@@ -101,77 +101,113 @@ print_menu() {
 # عملکرد: یک منوی تعاملی برای حذف اجزای مختلف Hysteria نمایش می‌دهد.
 #          کاربر می‌تواند انتخاب کند کدام بخش‌ها حذف شوند.
 uninstall_menu() {
-    echo -e "${YELLOW}Scanning for Hysteria components...${RESET}"
+    while true; do
+        echo -e "${YELLOW}Scanning for Hysteria components...${RESET}"
 
-    # Find all components
-    local services=($(systemctl list-unit-files | grep -o 'hysteria-.*\.service'))
-    local configs=($(find /etc/hysteria -name "*.yaml"))
-    local hysteria_binary=$(which hysteria)
-    local log_file="/var/log/hysteria_script.log"
-    local mapping_file="/etc/hysteria/port_mapping.txt"
-    local cron_job=$(crontab -l 2>/dev/null | grep "# Hysteria Tunnels Auto-Restart")
+        local tunnel_configs=($(sudo find /etc/hysteria -name "iran-*.yaml" 2>/dev/null))
+        local menu_options=()
+        local tunnel_names=()
 
-    local all_items=()
-    [[ ${#services[@]} -gt 0 ]] && all_items+=("Hysteria Services (${#services[@]})")
-    [[ ${#configs[@]} -gt 0 ]] && all_items+=("Hysteria Configs (${#configs[@]})")
-    [[ -n "$hysteria_binary" ]] && all_items+=("Hysteria Binary")
-    [[ -f "$log_file" ]] && all_items+=("Script Log File")
-    [[ -f "$mapping_file" ]] && all_items+=("Port Mapping File")
-    [[ -n "$cron_job" ]] && all_items+=("Cronjob for Auto-Restart")
+        # Add individual tunnels to the menu
+        if [ ${#tunnel_configs[@]} -gt 0 ]; then
+            for config in "${tunnel_configs[@]}"; do
+                local tunnel_name=$(basename "$config" .yaml | sed 's/^iran-//')
+                menu_options+=("Delete Tunnel: $tunnel_name")
+                tunnel_names+=("$tunnel_name")
+            done
+        fi
 
-    if [ ${#all_items[@]} -eq 0 ]; then
-        echo -e "${GREEN}No Hysteria components found to uninstall.${RESET}"
-        return
-    fi
+        # Add other components
+        local hysteria_binary=$(which hysteria 2>/dev/null)
+        local log_file="/var/log/hysteria_script.log"
+        local cron_job=$(crontab -l 2>/dev/null | grep "# Hysteria Tunnels Auto-Restart")
 
-    all_items+=("UNINSTALL ALL")
-    all_items+=("Cancel")
+        [[ -n "$hysteria_binary" ]] && menu_options+=("Delete Hysteria Binary")
+        [[ -f "$log_file" ]] && menu_options+=("Delete Script Log File")
+        [[ -n "$cron_job" ]] && menu_options+=("Delete Auto-Restart Cronjob")
+        
+        menu_options+=("DELETE ALL COMPONENTS")
+        menu_options+=("Back to Main Menu")
 
-    echo -e "${CYAN}Please select the components to uninstall (e.g., 1 3 4):${RESET}"
-    select item in "${all_items[@]}"; do
-        if [[ "$item" == "Cancel" ]]; then
-            echo -e "${YELLOW}Uninstall cancelled.${RESET}"
+        if [ ${#menu_options[@]} -eq 2 ]; then # Only ALL and Back options are present
+            echo -e "${GREEN}No Hysteria components found to uninstall.${RESET}"
+            sleep 2
             return
         fi
 
-        if [ -n "$item" ]; then
-            read -p "Are you sure you want to delete the selected components? [y/N]: " confirm
-            if [[ ! "$confirm" =~ ^[yY]$ ]]; then
-                echo -e "${YELLOW}Uninstall cancelled.${RESET}"
-                return
-            fi
-
-            if [[ " $REPLY " =~ " $((${#all_items[@]} - 1)) " ]] || [[ "$item" == "UNINSTALL ALL" ]]; then # UNINSTALL ALL
-                [[ ${#services[@]} -gt 0 ]] && sudo systemctl disable --now ${services[@]} &>/dev/null && sudo rm /etc/systemd/system/hysteria-*.service
-                [[ ${#configs[@]} -gt 0 ]] && sudo rm -f ${configs[@]}
-                [[ -n "$hysteria_binary" ]] && sudo rm -f "$hysteria_binary"
-                [[ -f "$log_file" ]] && sudo rm -f "$log_file"
-                [[ -f "$mapping_file" ]] && sudo rm -f "$mapping_file"
-                [[ -n "$cron_job" ]] && (crontab -l | grep -v "# Hysteria Tunnels Auto-Restart" | crontab -)
-                echo -e "${GREEN}All Hysteria components have been uninstalled.${RESET}"
-            else
-                for choice in $REPLY; do
-                    local selected_item=${all_items[$((choice-1))]}
-                    case "$selected_item" in
-                        *Services*) sudo systemctl disable --now ${services[@]} &>/dev/null && sudo rm /etc/systemd/system/hysteria-*.service && echo "Hysteria services removed.";;
-                        *Configs*) sudo rm -f ${configs[@]} && echo "Hysteria configs removed.";;
-                        *Binary*) sudo rm -f "$hysteria_binary" && echo "Hysteria binary removed.";;
-                        *Log*) sudo rm -f "$log_file" && echo "Script log file removed.";;
-                        *Mapping*) sudo rm -f "$mapping_file" && echo "Port mapping file removed.";;
-                        *Cronjob*) (crontab -l | grep -v "# Hysteria Tunnels Auto-Restart" | crontab -) && echo "Cronjob removed.";;
-                    esac
-                done
-                echo -e "${GREEN}Selected components have been uninstalled.${RESET}"
-            fi
-            
-            sudo systemctl daemon-reload
-            echo -e "${YELLOW}It is recommended to reboot the system to ensure all changes are applied.${RESET}"
-            read -p "Reboot now? [y/N]: " reboot_confirm
-            if [[ "$reboot_confirm" =~ ^[yY]$ ]]; then
-                sudo reboot
-            fi
-            return
-        fi
+        echo -e "${CYAN}Select the component to uninstall:${RESET}"
+        select choice in "${menu_options[@]}"; do
+            case "$choice" in
+                "Delete Tunnel: "*) # Handles all tunnel deletion choices
+                    local tunnel_to_delete=$(echo "$choice" | sed 's/Delete Tunnel: //')
+                    read -p "Are you sure you want to permanently delete tunnel '$tunnel_to_delete'? [y/N]: " confirm
+                    if [[ "$confirm" =~ ^[yY]$ ]]; then
+                        echo "Deleting tunnel: $tunnel_to_delete..."
+                        sudo systemctl disable --now "hysteria-iran-${tunnel_to_delete}.service" &>/dev/null
+                        sudo rm -f "/etc/systemd/system/hysteria-iran-${tunnel_to_delete}.service"
+                        sudo rm -f "/etc/hysteria/iran-${tunnel_to_delete}.yaml"
+                        sudo sed -i "/^${tunnel_to_delete},/d" /etc/hysteria/port_mapping.txt
+                        echo -e "${GREEN}Tunnel '$tunnel_to_delete' has been deleted.${RESET}"
+                        sudo systemctl daemon-reload
+                    else
+                        echo "Deletion cancelled."
+                    fi
+                    break
+                    ;;
+                "Delete Hysteria Binary")
+                    read -p "Are you sure you want to delete the Hysteria executable? [y/N]: " confirm
+                    if [[ "$confirm" =~ ^[yY]$ ]]; then
+                        sudo rm -f "$hysteria_binary"
+                        echo -e "${GREEN}Hysteria binary deleted.${RESET}"
+                    fi
+                    break
+                    ;;
+                "Delete Script Log File")
+                    read -p "Are you sure you want to delete the script log file? [y/N]: " confirm
+                    if [[ "$confirm" =~ ^[yY]$ ]]; then
+                        sudo rm -f "$log_file"
+                        echo -e "${GREEN}Script log file deleted.${RESET}"
+                    fi
+                    break
+                    ;;
+                "Delete Auto-Restart Cronjob")
+                    read -p "Are you sure you want to delete the auto-restart cronjob? [y/N]: " confirm
+                    if [[ "$confirm" =~ ^[yY]$ ]]; then
+                        (crontab -l | grep -v "# Hysteria Tunnels Auto-Restart" | crontab -)
+                        echo -e "${GREEN}Auto-restart cronjob deleted.${RESET}"
+                    fi
+                    break
+                    ;;
+                "DELETE ALL COMPONENTS")
+                    read -p "Are you sure you want to delete ALL Hysteria components? This is irreversible. [y/N]: " confirm
+                    if [[ "$confirm" =~ ^[yY]$ ]]; then
+                        echo "Deleting all components..."
+                        # Stop and remove all services
+                        local services=($(systemctl list-unit-files | grep -o 'hysteria-.*\.service'))
+                        if [ ${#services[@]} -gt 0 ]; then
+                            sudo systemctl disable --now ${services[@]} &>/dev/null
+                            sudo rm -f /etc/systemd/system/hysteria-*.service
+                        fi
+                        # Remove all other files
+                        sudo rm -rf /etc/hysteria
+                        sudo rm -f "$hysteria_binary"
+                        sudo rm -f "$log_file"
+                        (crontab -l | grep -v "# Hysteria Tunnels Auto-Restart" | crontab -)
+                        sudo systemctl daemon-reload
+                        echo -e "${GREEN}All Hysteria components have been removed.${RESET}"
+                    fi
+                    break
+                    ;;
+                "Back to Main Menu")
+                    return
+                    ;;
+                *)
+                    echo "Invalid option. Please try again."
+                    break
+                    ;;
+            esac
+        done
+        sleep 2
     done
 }
 
