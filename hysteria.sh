@@ -98,98 +98,6 @@ if [ ! -f /etc/hysteria/hysteria-monitor.py ]; then
 fi
 
 # ------------------ Manage Tunnels Function ------------------
-1)
-  read -rp "Enter tunnel number to edit (1-9): " TUNNEL_NUM
-  CONFIG_FILE="/etc/hysteria/iran-config${TUNNEL_NUM}.yaml"
-
-  if [ -f "$CONFIG_FILE" ]; then
-
-    read -rp "Enter new server IP/Domain (or Enter to keep current): " NEW_SERVER
-    read -rp "Enter new server port (or Enter to keep current): " NEW_PORT
-    read -rp "Enter new password (or Enter to keep current): " NEW_PASSWORD
-    read -rp "Enter new SNI (or Enter to keep current): " NEW_SNI
-
-    if [ -n "$NEW_SERVER" ] && [ -n "$NEW_PORT" ]; then
-      sed -i "s|server: .*|server: \"$NEW_SERVER:$NEW_PORT\"|" "$CONFIG_FILE"
-    fi
-
-    [ -n "$NEW_PASSWORD" ] && \
-      sed -i "s|auth: .*|auth: \"$NEW_PASSWORD\"|" "$CONFIG_FILE"
-
-    [ -n "$NEW_SNI" ] && \
-      sed -i "s|sni: .*|sni: \"$NEW_SNI\"|" "$CONFIG_FILE"
-
-    echo ""
-    read -rp "Do you want to edit forwarded ports? [y/N]: " EDIT_PORTS
- if [[ "$EDIT_PORTS" == "y" || "$EDIT_PORTS" == "yes" ]]; then
-
-  read -rp "How many ports do you want to forward? " PORT_FORWARD_COUNT
-
-  # استخراج remote IP قبلی از فایل
-  EXISTING_REMOTE_IP=$(grep -m1 "remote:" "$CONFIG_FILE" | awk -F"'" '{print $2}' | cut -d':' -f1)
-
-  if [ -z "$EXISTING_REMOTE_IP" ]; then
-    EXISTING_REMOTE_IP="0.0.0.0"
-  fi
-
-  TCP_FORWARD=""
-  UDP_FORWARD=""
-
-  for (( p=1; p<=PORT_FORWARD_COUNT; p++ )); do
-    read -rp "Enter port #$p: " TUNNEL_PORT
-
-    TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
-    remote: '$EXISTING_REMOTE_IP:$TUNNEL_PORT'
-"
-    UDP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
-    remote: '$EXISTING_REMOTE_IP:$TUNNEL_PORT'
-"
-  done
-
-  # حذف کامل بلاک‌های قبلی
-  sed -i '/^tcpForwarding:/,$d' "$CONFIG_FILE"
-
-  # اضافه کردن بلاک جدید
-  cat << EOF >> "$CONFIG_FILE"
-tcpForwarding:
-$TCP_FORWARD
-udpForwarding:
-$UDP_FORWARD
-EOF
-fi
-
-    systemctl restart hysteria${TUNNEL_NUM}
-    colorEcho "Tunnel #${TUNNEL_NUM} updated and restarted." green
-  else
-    colorEcho "Tunnel #${TUNNEL_NUM} does not exist." red
-  fi
-  ;;
-    2)
-      read -rp "Enter tunnel number to delete (1-9): " TUNNEL_NUM
-      if [ -f "/etc/hysteria/iran-config${TUNNEL_NUM}.yaml" ]; then
-        systemctl stop   hysteria${TUNNEL_NUM}
-        systemctl disable hysteria${TUNNEL_NUM}
-        rm "/etc/hysteria/iran-config${TUNNEL_NUM}.yaml"
-        rm "/etc/systemd/system/hysteria${TUNNEL_NUM}.service"
-        systemctl daemon-reload
-        colorEcho "Tunnel #${TUNNEL_NUM} deleted." green
-      else
-        colorEcho "Tunnel #${TUNNEL_NUM} does not exist." red
-      fi
-      sed -i "\%^iran-config${TUNNEL_NUM}\.yaml|%d" "$MAPPING_FILE"
-      ;;
-    3)
-      return
-      ;;
-    *)
-      colorEcho "Invalid choice. Returning..." red
-      ;;
-  esac
-  set -e
-  set -o pipefail
-}
-
-# ------------------ Manage Tunnels Function ------------------
 manage_tunnels() {
 
   while true; do
@@ -203,8 +111,8 @@ manage_tunnels() {
     case "$EDIT_CHOICE" in
 
       1)
-        read -rp "Enter tunnel number to edit: " TUNNEL_NUM
-        CONFIG_FILE="/etc/hysteria/iran-config${TUNNEL_NUM}.yaml"
+        read -rp "Enter tunnel name to edit (example: my-tunnel): " TUNNEL_NAME
+        CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
 
         if [ ! -f "$CONFIG_FILE" ]; then
           colorEcho "Tunnel does not exist." red
@@ -271,35 +179,35 @@ udpForwarding:
 $UDP_FORWARD
 EOF
 
-          sed -i "\%^iran-config${TUNNEL_NUM}\.yaml|d" /etc/hysteria/port_mapping.txt
-          echo "iran-config${TUNNEL_NUM}.yaml|hysteria${TUNNEL_NUM}|$PORT_LIST" \
+          sed -i "\%^iran-${TUNNEL_NAME}\.yaml|d" /etc/hysteria/port_mapping.txt
+          echo "iran-${TUNNEL_NAME}.yaml|hysteria-${TUNNEL_NAME}|$PORT_LIST" \
             | sudo tee -a /etc/hysteria/port_mapping.txt > /dev/null
         fi
 
-        sudo systemctl restart hysteria${TUNNEL_NUM}
-        colorEcho "Tunnel ${TUNNEL_NUM} updated successfully." green
+        sudo systemctl restart hysteria-"${TUNNEL_NAME}"
+        colorEcho "Tunnel ${TUNNEL_NAME} updated successfully." green
         ;;
 
       2)
-        read -rp "Enter tunnel number to delete: " TUNNEL_NUM
+        read -rp "Enter tunnel name to delete: " TUNNEL_NAME
 
-        CONFIG_FILE="/etc/hysteria/iran-config${TUNNEL_NUM}.yaml"
-        SERVICE_FILE="/etc/systemd/system/hysteria${TUNNEL_NUM}.service"
+        CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
+        SERVICE_FILE="/etc/systemd/system/hysteria-${TUNNEL_NAME}.service"
 
         if [ ! -f "$CONFIG_FILE" ]; then
           colorEcho "Tunnel does not exist." red
           continue
         fi
 
-        sudo systemctl stop hysteria${TUNNEL_NUM}
-        sudo systemctl disable hysteria${TUNNEL_NUM}
+        sudo systemctl stop hysteria-"${TUNNEL_NAME}"
+        sudo systemctl disable hysteria-"${TUNNEL_NAME}"
         sudo rm -f "$CONFIG_FILE"
         sudo rm -f "$SERVICE_FILE"
         sudo systemctl daemon-reload
 
-        sed -i "\%^iran-config${TUNNEL_NUM}\.yaml|d" /etc/hysteria/port_mapping.txt
+        sed -i "\%^iran-${TUNNEL_NAME}\.yaml|d" /etc/hysteria/port_mapping.txt
 
-        colorEcho "Tunnel ${TUNNEL_NUM} deleted." green
+        colorEcho "Tunnel ${TUNNEL_NAME} deleted." green
         ;;
 
       3)
@@ -542,8 +450,8 @@ ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/server-config.yaml
 Restart=always
 RestartSec=5
 LimitNOFILE=1048576
-StandardOutput=file:/var/log/hysteria.log
-StandardError=file:/var/log/hysteria.err
+StandardOutput=append:/var/log/hysteria.log
+StandardError=append:/var/log/hysteria.err
 
 [Install]
 WantedBy=multi-user.target
@@ -561,17 +469,13 @@ EOF
   rm -f "$TMP_FILE"
 
   colorEcho "Foreign server setup completed." green
+fi
 
-# ------------------ Iranian Client Setup ------------------
-for (( c=1; c<=SERVER_COUNT; c++ )); do
+# ------------------ Iranian Client Setup (Create New Tunnel) ------------------
+if [ "$SERVER_TYPE" == "iran" ]; then
+  colorEcho "Creating new Iranian tunnel..." cyan
 
-  NEXT_TUNNEL=1
-  while [ -f "/etc/hysteria/iran-config${NEXT_TUNNEL}.yaml" ]; do
-    NEXT_TUNNEL=$((NEXT_TUNNEL + 1))
-  done
-  i=$NEXT_TUNNEL
-
-  colorEcho "Foreign server #$i:" cyan
+  read -p "Enter a name for this tunnel (example: my-tunnel): " TUNNEL_NAME
 
   read -p "Enter IP Address or Domain for Foreign server: " SERVER_ADDRESS
   read -p "Hysteria Port ex.(443): " PORT
@@ -602,8 +506,8 @@ for (( c=1; c<=SERVER_COUNT; c++ )); do
     FORWARDED_PORTS="${FORWARDED_PORTS:+$FORWARDED_PORTS,}$TUNNEL_PORT"
   done
 
-  CONFIG_FILE="/etc/hysteria/iran-config${i}.yaml"
-  SERVICE_FILE="/etc/systemd/system/hysteria${i}.service"
+  CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
+  SERVICE_FILE="/etc/systemd/system/hysteria-${TUNNEL_NAME}.service"
 
   cat <<EOF | sudo tee "$CONFIG_FILE" > /dev/null
 server: "$SERVER_ADDRESS:$PORT"
@@ -621,12 +525,12 @@ EOF
 
   cat <<EOF | sudo tee "$SERVICE_FILE" > /dev/null
 [Unit]
-Description=Hysteria2 Client $i
+Description=Hysteria2 Client $TUNNEL_NAME
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/hysteria client -c $CONFIG_FILE
+ExecStart=/usr/local/bin/hysteria client -c "$CONFIG_FILE"
 Restart=always
 RestartSec=5
 LimitNOFILE=1048576
@@ -636,10 +540,10 @@ WantedBy=multi-user.target
 EOF
 
   sudo systemctl daemon-reload
-  sudo systemctl enable --now hysteria${i}
+  sudo systemctl enable --now hysteria-"${TUNNEL_NAME}"
 
-  echo "iran-config${i}.yaml|hysteria${i}|${FORWARDED_PORTS}" \
+  echo "iran-${TUNNEL_NAME}.yaml|hysteria-${TUNNEL_NAME}|${FORWARDED_PORTS}" \
     | sudo tee -a "$MAPPING_FILE" > /dev/null
 
-  colorEcho "Tunnel $i setup completed." green
-done
+  colorEcho "Tunnel ${TUNNEL_NAME} setup completed." green
+fi
