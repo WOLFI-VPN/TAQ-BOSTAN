@@ -23,10 +23,8 @@
 دستور اجرای اسکریپت:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main/script.sh)
-```
+ bash <(curl -Ls https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main/hysteria.sh)```
 ## 🌟 معرفی پروژه
-پروژه‌ی **طاق‌بستان** یک راهکار جامع برای ایجاد تونل‌های امن اینترنتی و IPv6 لوکال است. این پروژه شامل سه بخش اصلی می‌شود:
 
 - 🔒 ساخت تونل بسیار امن و سریع با Hysteria2
 ---
@@ -44,11 +42,11 @@ bash <(curl -Ls https://raw.githubusercontent.com/WOLFI-VPN/TAQ-BOSTAN/main/scri
 ---
 
 <details>
-<summary>✅ مشاهده توضیحات و آموزش استفاده</summary>
+<summary>✅ مشاهده توضیحات </summary>
 
 ## 🔒 بخش اول: تونل امن و سریع با Hysteria2
 <details>
-<summary>✅ مشاهده توضیحات و آموزش استفاده</summary>
+<summary>✅ مشاهده توضیحات </summary>
 
 ### 📌 مزایا:
 - تونل رمزنگاری‌شده **TLS 1.3 + QUIC**
