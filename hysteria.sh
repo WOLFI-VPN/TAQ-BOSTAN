@@ -563,57 +563,49 @@ EOF
   colorEcho "Foreign server setup completed." green
 
 # ------------------ Iranian Client Setup ------------------
-elif [ "$SERVER_TYPE" == "iran" ]; then
-  colorEcho "Setting up Iranian server..." green
+for (( c=1; c<=SERVER_COUNT; c++ )); do
 
-  read -p "How many foreign servers do you have? " SERVER_COUNT
+  NEXT_TUNNEL=1
+  while [ -f "/etc/hysteria/iran-config${NEXT_TUNNEL}.yaml" ]; do
+    NEXT_TUNNEL=$((NEXT_TUNNEL + 1))
+  done
+  i=$NEXT_TUNNEL
 
-  CURRENT_TUNNEL=$NEXT_TUNNEL
+  colorEcho "Foreign server #$i:" cyan
 
-  for (( c=1; c<=SERVER_COUNT; c++ ))
-  do
-    i=$CURRENT_TUNNEL
+  read -p "Enter IP Address or Domain for Foreign server: " SERVER_ADDRESS
+  read -p "Hysteria Port ex.(443): " PORT
 
-    colorEcho "Foreign server #$i:" cyan
+  while true; do
+    read -p "Password: " PASSWORD
+    [[ -n "$PASSWORD" ]] && break
+    colorEcho "Password cannot be empty." red
+  done
 
-    read -p "Enter IP Address or Domain for Foreign server: " SERVER_ADDRESS
-    read -p "Hysteria Port ex.(443): " PORT
+  read -p "SNI ex.(google.com): " SNI
+  read -p "How many ports do you have for forwarding? " PORT_FORWARD_COUNT
 
-    while true; do
-      read -p "Password: " PASSWORD
-      [[ -n "$PASSWORD" ]] && break
-      colorEcho "Password cannot be empty." red
-    done
+  TCP_FORWARD=""
+  UDP_FORWARD=""
+  FORWARDED_PORTS=""
 
-    read -p "SNI ex.(google.com): " SNI
-    read -p "How many ports do you have for forwarding? " PORT_FORWARD_COUNT
+  for (( p=1; p<=PORT_FORWARD_COUNT; p++ )); do
+    read -p "Enter port number #$p you want to tunnel: " TUNNEL_PORT
 
-    TCP_FORWARD=""
-    UDP_FORWARD=""
-    FORWARDED_PORTS=""
-
-    for (( p=1; p<=PORT_FORWARD_COUNT; p++ ))
-    do
-      read -p "Enter port number #$p you want to tunnel: " TUNNEL_PORT
-
-      TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
+    TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
     remote: '$REMOTE_IP:$TUNNEL_PORT'
 "
-      UDP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
+    UDP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
     remote: '$REMOTE_IP:$TUNNEL_PORT'
 "
 
-      if [ -z "$FORWARDED_PORTS" ]; then
-        FORWARDED_PORTS="$TUNNEL_PORT"
-      else
-        FORWARDED_PORTS="$FORWARDED_PORTS,$TUNNEL_PORT"
-      fi
-    done
+    FORWARDED_PORTS="${FORWARDED_PORTS:+$FORWARDED_PORTS,}$TUNNEL_PORT"
+  done
 
-    CONFIG_FILE="/etc/hysteria/iran-config${i}.yaml"
-    SERVICE_FILE="/etc/systemd/system/hysteria${i}.service"
+  CONFIG_FILE="/etc/hysteria/iran-config${i}.yaml"
+  SERVICE_FILE="/etc/systemd/system/hysteria${i}.service"
 
-    cat << EOF | sudo tee "$CONFIG_FILE" > /dev/null
+  cat <<EOF | sudo tee "$CONFIG_FILE" > /dev/null
 server: "$SERVER_ADDRESS:$PORT"
 auth: "$PASSWORD"
 tls:
@@ -627,7 +619,7 @@ udpForwarding:
 $UDP_FORWARD
 EOF
 
-    cat << EOF | sudo tee "$SERVICE_FILE" > /dev/null
+  cat <<EOF | sudo tee "$SERVICE_FILE" > /dev/null
 [Unit]
 Description=Hysteria2 Client $i
 After=network.target
@@ -643,137 +635,11 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
 
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now hysteria${i}
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now hysteria${i}
 
-    echo "iran-config${i}.yaml|hysteria${i}|${FORWARDED_PORTS}" \
+  echo "iran-config${i}.yaml|hysteria${i}|${FORWARDED_PORTS}" \
     | sudo tee -a "$MAPPING_FILE" > /dev/null
 
-    colorEcho "Tunnel $i setup completed." green
-
-    CURRENT_TUNNEL=$((CURRENT_TUNNEL + 1))
-  done
-
-  colorEcho "All tunnels set up successfully." green
-    read -p "Hysteria Port ex.(443): " PORT
-
-    while true; do
-      read -p "Password: " PASSWORD
-      if [[ -z "$PASSWORD" ]]; then
-        colorEcho "Password cannot be empty. Please enter a valid password." red
-      else
-        break
-      fi
-    done
-
-    read -p "SNI ex.(google.com): " SNI
-    read -p "How many ports do you have for forwarding? ex.(1) " PORT_FORWARD_COUNT
-
-    TCP_FORWARD=""
-    UDP_FORWARD=""
-    FORWARDED_PORTS=""
-
-    for (( p=1; p<=$PORT_FORWARD_COUNT; p++ ))
-    do
-      read -p "Enter port number #$p you want to tunnel: " TUNNEL_PORT
-
-      TCP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
-    remote: '$REMOTE_IP:$TUNNEL_PORT'
-"
-      UDP_FORWARD+="  - listen: 0.0.0.0:$TUNNEL_PORT
-    remote: '$REMOTE_IP:$TUNNEL_PORT'
-"
-      if [ -z "$FORWARDED_PORTS" ]; then
-        FORWARDED_PORTS="$TUNNEL_PORT"
-      else
-        FORWARDED_PORTS="$FORWARDED_PORTS,$TUNNEL_PORT"
-      fi
-    done
-
-    # Create configuration and service files for each tunnel
-    CONFIG_FILE="/etc/hysteria/iran-config${i}.yaml"
-    SERVICE_FILE="/etc/systemd/system/hysteria${i}.service"
-
-    cat << EOF | sudo tee "$CONFIG_FILE" > /dev/null
-server: "$SERVER_ADDRESS:$PORT"
-auth: "$PASSWORD"
-tls:
-  sni: "$SNI"
-  insecure: true
-$(echo "$OBFS_CONFIG" | sed "s/__REPLACE_PASSWORD__/$PASSWORD/")
-$(echo "$QUIC_SETTINGS")
-tcpForwarding:
-$TCP_FORWARD
-udpForwarding:
-$UDP_FORWARD
-EOF
-
-    cat << EOF | sudo tee "$SERVICE_FILE" > /dev/null
-[Unit]
-Description=Hysteria2 Client $i
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/hysteria client -c $CONFIG_FILE
-Restart=always
-RestartSec=5
-LimitNOFILE=1048576
-StandardOutput=file:/var/log/hysteria${i}.log
-StandardError=file:/var/log/hysteria${i}.err
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now hysteria${i}
-    sudo systemctl reload-or-restart hysteria${i}
-
-    
-    # Add cron job for each tunnel
-
-    echo "iran-config${i}.yaml|hysteria${i}|${FORWARDED_PORTS}" \
-    | sudo tee -a "$MAPPING_FILE" > /dev/null
-    colorEcho "Tunnel $i setup completed." green
-  done
-# ====== Set up per-config iptables counters ======
-while IFS='|' read -r cfg service ports; do
-  idx="${cfg##*config}"      # => "1.yaml"
-  idx="${idx%%.*}"           # => "1"
-  chain="HYST${idx}"         # => "HYST1"
-  sudo iptables -t mangle -N "$chain" 2>/dev/null || sudo iptables -t mangle -F "$chain"
-  sudo iptables -t mangle -A "$chain" -j RETURN
-  IFS=',' read -ra PARR <<< "$ports"
-  for p in "${PARR[@]}"; do
-    sudo iptables -t mangle -A OUTPUT -p tcp --dport "$p" -j "$chain"
-    sudo iptables -t mangle -A OUTPUT -p udp --dport "$p" -j "$chain"
-  done
-done < "$MAPPING_FILE"
-
-sudo tee /etc/systemd/system/hysteria-monitor.service > /dev/null <<'EOF'
-[Unit]
-Description=Hysteria Monitor Service
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 /etc/hysteria/hysteria-monitor.py
-Restart=always
-RestartSec=10
-StandardOutput=file:/var/log/hysteria/monitor.log
-StandardError=file:/var/log/hysteria/monitor.err
-
-[Install]
-WantedBy=multi-user.target
-EOF
-sudo systemctl daemon-reload
-sudo systemctl enable hysteria-monitor
-sudo systemctl start hysteria-monitor
-
-
-  colorEcho "All tunnels set up successfully." green
-else
-  colorEcho "Invalid server type. Please enter 'Iran' or 'Foreign'." red
-  exit 1
-fi
+  colorEcho "Tunnel $i setup completed." green
+done
