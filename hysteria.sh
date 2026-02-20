@@ -105,64 +105,79 @@ fi
 manage_tunnels() {
 
   while true; do
-    # build a numbered list of existing iran tunnels from mapping file
-    MAP_FILE="/etc/hysteria/port_mapping.txt"
-    TUNNEL_NAMES=()
-    if [ -f "$MAP_FILE" ]; then
-      while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
-        case "$CFG_NAME" in
-          iran-*.yaml)
-            NAME="${CFG_NAME#iran-}"
-            NAME="${NAME%.yaml}"
-            TUNNEL_NAMES+=("$NAME")
-            ;;
-        esac
-      done < "$MAP_FILE"
-    fi
-
-    MENU_OPTIONS=()
-    INDEX=1
-    for NAME in "${TUNNEL_NAMES[@]}"; do
-      MENU_OPTIONS+=("$INDEX | $NAME")
-      INDEX=$((INDEX + 1))
-    done
-    MENU_OPTIONS+=("E | Enter name manually")
-    MENU_OPTIONS+=("B | Back")
-
     draw_menu "Manage Iranian Tunnels" \
-      "${MENU_OPTIONS[@]}"
+      "1 | Edit Tunnel" \
+      "2 | Delete Tunnel" \
+      "3 | Back"
 
-    read -r EDIT_CHOICE
+    read -r ACTION_CHOICE
 
-    case "$EDIT_CHOICE" in
+    case "$ACTION_CHOICE" in
 
-      [0-9]*)
-        CHOICE_INDEX=$((EDIT_CHOICE - 1))
-        if [ "$CHOICE_INDEX" -lt 0 ] || [ "$CHOICE_INDEX" -ge "${#TUNNEL_NAMES[@]}" ]; then
-          colorEcho "Invalid index." red
+      1)
+        # build a numbered list of existing iran tunnels from mapping file
+        MAP_FILE="/etc/hysteria/port_mapping.txt"
+        TUNNEL_NAMES=()
+        if [ -f "$MAP_FILE" ]; then
+          while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
+            case "$CFG_NAME" in
+              iran-*.yaml)
+                NAME="${CFG_NAME#iran-}"
+                NAME="${NAME%.yaml}"
+                TUNNEL_NAMES+=("$NAME")
+                ;;
+            esac
+          done < "$MAP_FILE"
+        fi
+
+        if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
+          colorEcho "No tunnels found. Create a tunnel first." yellow
+          sleep 2
           continue
         fi
-        TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
-        ;;
 
-      [Ee])
-        read -rp "Enter tunnel name (example: my-tunnel): " TUNNEL_NAME
-        ;;
+        MENU_OPTIONS=()
+        INDEX=1
+        for NAME in "${TUNNEL_NAMES[@]}"; do
+          MENU_OPTIONS+=("$INDEX | $NAME")
+          INDEX=$((INDEX + 1))
+        done
+        MENU_OPTIONS+=("E | Enter name manually")
+        MENU_OPTIONS+=("B | Back")
 
-      [Bb])
-        return
-        ;;
+        draw_menu "Select Tunnel to Edit" \
+          "${MENU_OPTIONS[@]}"
 
-      *)
-        colorEcho "Invalid selection." red
-        continue
-        ;;
-    esac
+        read -r TUNNEL_CHOICE
 
-    CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
+        case "$TUNNEL_CHOICE" in
+          [0-9]*)
+            CHOICE_INDEX=$((TUNNEL_CHOICE - 1))
+            if [ "$CHOICE_INDEX" -lt 0 ] || [ "$CHOICE_INDEX" -ge "${#TUNNEL_NAMES[@]}" ]; then
+              colorEcho "Invalid index." red
+              sleep 2
+              continue
+            fi
+            TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
+            ;;
+          [Ee])
+            read -rp "Enter tunnel name (example: my-tunnel): " TUNNEL_NAME
+            ;;
+          [Bb])
+            continue
+            ;;
+          *)
+            colorEcho "Invalid selection." red
+            sleep 2
+            continue
+            ;;
+        esac
+
+        CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
 
         if [ ! -f "$CONFIG_FILE" ]; then
           colorEcho "Tunnel does not exist." red
+          sleep 2
           continue
         fi
 
@@ -234,16 +249,81 @@ EOF
 
         sudo systemctl restart "hysteria-${TUNNEL_NAME}"
         colorEcho "Tunnel ${TUNNEL_NAME} updated successfully." green
+        sleep 2
         ;;
 
       2)
-        read -rp "Enter tunnel name to delete: " TUNNEL_NAME
+        # build a numbered list of existing iran tunnels from mapping file
+        MAP_FILE="/etc/hysteria/port_mapping.txt"
+        TUNNEL_NAMES=()
+        if [ -f "$MAP_FILE" ]; then
+          while IFS='|' read -r CFG_NAME SERVICE_NAME PORTS; do
+            case "$CFG_NAME" in
+              iran-*.yaml)
+                NAME="${CFG_NAME#iran-}"
+                NAME="${NAME%.yaml}"
+                TUNNEL_NAMES+=("$NAME")
+                ;;
+            esac
+          done < "$MAP_FILE"
+        fi
+
+        if [ ${#TUNNEL_NAMES[@]} -eq 0 ]; then
+          colorEcho "No tunnels found. Create a tunnel first." yellow
+          sleep 2
+          continue
+        fi
+
+        MENU_OPTIONS=()
+        INDEX=1
+        for NAME in "${TUNNEL_NAMES[@]}"; do
+          MENU_OPTIONS+=("$INDEX | $NAME")
+          INDEX=$((INDEX + 1))
+        done
+        MENU_OPTIONS+=("E | Enter name manually")
+        MENU_OPTIONS+=("B | Back")
+
+        draw_menu "Select Tunnel to Delete" \
+          "${MENU_OPTIONS[@]}"
+
+        read -r TUNNEL_CHOICE
+
+        case "$TUNNEL_CHOICE" in
+          [0-9]*)
+            CHOICE_INDEX=$((TUNNEL_CHOICE - 1))
+            if [ "$CHOICE_INDEX" -lt 0 ] || [ "$CHOICE_INDEX" -ge "${#TUNNEL_NAMES[@]}" ]; then
+              colorEcho "Invalid index." red
+              sleep 2
+              continue
+            fi
+            TUNNEL_NAME="${TUNNEL_NAMES[$CHOICE_INDEX]}"
+            ;;
+          [Ee])
+            read -rp "Enter tunnel name to delete: " TUNNEL_NAME
+            ;;
+          [Bb])
+            continue
+            ;;
+          *)
+            colorEcho "Invalid selection." red
+            sleep 2
+            continue
+            ;;
+        esac
 
         CONFIG_FILE="/etc/hysteria/iran-${TUNNEL_NAME}.yaml"
         SERVICE_FILE="/etc/systemd/system/hysteria-${TUNNEL_NAME}.service"
 
         if [ ! -f "$CONFIG_FILE" ]; then
           colorEcho "Tunnel does not exist." red
+          sleep 2
+          continue
+        fi
+
+        read -rp "Are you sure you want to delete tunnel '${TUNNEL_NAME}'? [y/N]: " CONFIRM
+        if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+          colorEcho "Deletion cancelled." yellow
+          sleep 2
           continue
         fi
 
@@ -256,6 +336,7 @@ EOF
         sed -i "/^iran-${TUNNEL_NAME}\.yaml|/d" /etc/hysteria/port_mapping.txt
 
         colorEcho "Tunnel ${TUNNEL_NAME} deleted." green
+        sleep 2
         ;;
 
       3)
@@ -264,6 +345,7 @@ EOF
 
       *)
         colorEcho "Invalid choice." red
+        sleep 2
         ;;
     esac
   done
