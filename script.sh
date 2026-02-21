@@ -64,7 +64,7 @@ EOF
 
   echo -e "${CYAN}╠${line}╣${RESET}"
 
-  local dev_line="Developed by WOLFI-VPN"
+  local dev_line="Developed by ParsaKSH"
   local sponsor_line="Sponsored by DigitalVPS.ir"
   local love_line="♥ With Love From Iran ♥"
 
