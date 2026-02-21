@@ -432,12 +432,19 @@ manage_cronjobs() {
         ;;
       2)
         local CRON_CMD="0 4 * * * systemctl restart hysteria-*.service"
-        (crontab -l 2>/dev/null | grep -v "hysteria-*.service"; echo "$CRON_CMD") | crontab -
+        local TMP_CRON=$(mktemp)
+        crontab -l 2>/dev/null | grep -v "hysteria-*.service" > "$TMP_CRON" || true
+        echo "$CRON_CMD" >> "$TMP_CRON"
+        crontab "$TMP_CRON"
+        rm -f "$TMP_CRON"
         colorEcho "Daily restart cronjob enabled at 04:00 AM." green
         sleep 2
         ;;
       3)
-        crontab -l 2>/dev/null | grep -v "hysteria" | crontab -
+        local TMP_CRON=$(mktemp)
+        crontab -l 2>/dev/null | grep -v "hysteria" > "$TMP_CRON" || true
+        crontab "$TMP_CRON"
+        rm -f "$TMP_CRON"
         colorEcho "All Hysteria cronjobs disabled." green
         sleep 2
         ;;
