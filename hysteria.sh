@@ -255,6 +255,203 @@ monitor_ports() {
   set -o pipefail
 }
 
+# ------------------ View Logs Function ------------------
+view_logs() {
+  colorEcho "=== View Tunnel Logs ===" cyan
+  shopt -s nullglob
+  local config_files=(/etc/hysteria/iran-*.yaml)
+  shopt -u nullglob
+
+
+  if [ ${#config_files[@]} -eq 0 ]; then
+    colorEcho "No tunnels found!" yellow
+    sleep 2
+    return
+  fi
+
+  local options=()
+  local names=()
+  local i=1
+  for cfg in "${config_files[@]}"; do
+    local name="${cfg##*/iran-}"
+    name="${name%.yaml}"
+    options+=("$i | $name")
+    names+=("$name")
+    ((i++))
+  done
+  options+=("A | All Tunnels")
+  options+=("B | Back")
+
+  draw_menu "Select Tunnel for Logs" "${options[@]}"
+  read -rp "> " LOG_CHOICE
+
+  if [[ "$LOG_CHOICE" =~ ^[Bb]$ ]]; then
+    return
+  fi
+
+  local filter_cmd="cat"
+  # Optional: Add color highlighting for keywords
+  if command -v grep &> /dev/null; then
+    filter_cmd="grep --color=always -E 'error|failed|connected|accepted|accepted|auth|Hysteria|$'"
+  fi
+
+  if [[ "$LOG_CHOICE" =~ ^[Aa]$ ]]; then
+    clear
+    colorEcho "--- Logs for All Tunnels (last 50 lines) ---" magenta
+    for name in "${names[@]}"; do
+      echo -e "\n🔵 Tunnel: ${name}"
+      sudo journalctl -u "hysteria-${name}" -n 50 --no-pager | eval "$filter_cmd"
+    done
+  elif [[ "$LOG_CHOICE" =~ ^[0-9]+$ ]] && [ "$LOG_CHOICE" -le "${#names[@]}" ]; then
+    local selected_name="${names[$((LOG_CHOICE-1))]}"
+    clear
+    colorEcho "--- Logs for Tunnel: ${selected_name} (last 100 lines) ---" magenta
+    sudo journalctl -u "hysteria-${selected_name}" -n 100 --no-pager | eval "$filter_cmd"
+  else
+    colorEcho "Invalid option." red
+    sleep 2
+    return
+  fi
+
+  colorEcho "Press Enter to return to menu..." green
+  read -r
+}
+
+# ------------------ View Tunnel Information Function ------------------
+view_tunnel_info() {
+  colorEcho "=== View Tunnel Information ===" cyan
+  shopt -s nullglob
+  local config_files=(/etc/hysteria/iran-*.yaml)
+  shopt -u nullglob
+
+  if [ ${#config_files[@]} -eq 0 ]; then
+    colorEcho "No tunnels found!" yellow
+    sleep 2
+    return
+  fi
+
+  for cfg in "${config_files[@]}"; do
+    local name="${cfg##*/iran-}"
+    name="${name%.yaml}"
+    
+    echo -e "\n$(printf -- '═%.0s' {1..50})"
+    colorEcho "Tunnel Name: ${name}" magenta
+    echo "$(printf -- '─%.0s' {1..50})"
+    
+    local server=$(grep "server:" "$cfg" | cut -d'"' -f2)
+    local auth=$(grep "auth:" "$cfg" | cut -d'"' -f2)
+    local sni=$(grep "sni:" "$cfg" | cut -d'"' -f2)
+    
+    echo -e "📡 Server   : \e[33m${server}\e[0m"
+    echo -e "🔑 Password : \e[33m${auth}\e[0m"
+    echo -e "🌐 SNI      : \e[33m${sni}\e[0m"
+    
+    echo -e "\n🔌 Forwarded Ports:"
+    echo "  TCP:"
+    grep -A50 "tcpForwarding:" "$cfg" | grep "listen:" | awk '{print "    - "$NF}'
+    echo "  UDP:"
+    grep -A50 "udpForwarding:" "$cfg" | grep "listen:" | awk '{print "    - "$NF}'
+    
+    echo "$(printf -- '═%.0s' {1..50})"
+  done
+
+  echo ""
+  colorEcho "Press Enter to return to menu..." green
+  read -r
+}
+
+# ------------------ Restart Management Function ------------------
+restart_management() {
+  colorEcho "=== Restart Management ===" cyan
+  shopt -s nullglob
+  local config_files=(/etc/hysteria/iran-*.yaml)
+  shopt -u nullglob
+
+  if [ ${#config_files[@]} -eq 0 ]; then
+    colorEcho "No tunnels found!" yellow
+    sleep 2
+    return
+  fi
+
+  local options=()
+  local names=()
+  local i=1
+  for cfg in "${config_files[@]}"; do
+    local name="${cfg##*/iran-}"
+    name="${name%.yaml}"
+    options+=("$i | $name")
+    names+=("$name")
+    ((i++))
+  done
+  options+=("A | All Tunnels")
+  options+=("B | Back")
+
+  draw_menu "Select Tunnel to Restart" "${options[@]}"
+  read -rp "> " CHOICE
+
+  if [[ "$CHOICE" =~ ^[Bb]$ ]]; then
+    return
+  fi
+
+  if [[ "$CHOICE" =~ ^[Aa]$ ]]; then
+    colorEcho "Restarting all tunnels..." yellow
+    for name in "${names[@]}"; do
+      systemctl restart "hysteria-${name}"
+      echo "Restarted: ${name}"
+    done
+  elif [[ "$CHOICE" =~ ^[0-9]+$ ]] && [ "$CHOICE" -le "${#names[@]}" ]; then
+    local selected_name="${names[$((CHOICE-1))]}"
+    colorEcho "Restarting tunnel: ${selected_name}..." yellow
+    systemctl restart "hysteria-${selected_name}"
+    colorEcho "Done." green
+  else
+    colorEcho "Invalid option." red
+    sleep 2
+    return
+  fi
+  sleep 2
+}
+
+# ------------------ Cronjob Management Function ------------------
+manage_cronjobs() {
+  while true; do
+    draw_menu "Cronjob Management" \
+      "1 | Show Current Cronjobs" \
+      "2 | Enable Daily Restart (04:00 AM) for All Tunnels" \
+      "3 | Disable All Hysteria Cronjobs" \
+      "4 | Back"
+    read -rp "> " CRON_CHOICE
+
+    case "$CRON_CHOICE" in
+      1)
+        clear
+        colorEcho "Current Hysteria Cronjobs:" magenta
+        crontab -l 2>/dev/null | grep "hysteria" || echo "No hysteria cronjobs found."
+        echo ""
+        read -rp "Press Enter to continue..."
+        ;;
+      2)
+        local CRON_CMD="0 4 * * * systemctl restart hysteria-*.service"
+        (crontab -l 2>/dev/null | grep -v "hysteria-*.service"; echo "$CRON_CMD") | crontab -
+        colorEcho "Daily restart cronjob enabled at 04:00 AM." green
+        sleep 2
+        ;;
+      3)
+        crontab -l 2>/dev/null | grep -v "hysteria" | crontab -
+        colorEcho "All Hysteria cronjobs disabled." green
+        sleep 2
+        ;;
+      4)
+        return
+        ;;
+      *)
+        colorEcho "Invalid selection." red
+        sleep 2
+        ;;
+    esac
+  done
+}
+
 # ------------------ Server Type Menu ------------------
 while true; do
 draw_menu "Server Type Selection" \
@@ -267,9 +464,13 @@ draw_menu "Server Type Selection" \
       while true; do
         draw_menu "Iranian Server Options" \
           "1 | Create New Tunnel" \
-          "2 | Edit tunnel list" \
+          "2 | Edit Tunnel List" \
           "3 | Monitor Traffic Ports" \
-          "4 | Exit"
+          "4 | View System Logs" \
+          "5 | View Tunnel Information" \
+          "6 | Restart Management" \
+          "7 | Cronjob Management" \
+          "8 | Exit"
         read -rp "> " IRAN_CHOICE
         case "$IRAN_CHOICE" in
           1) 
@@ -281,11 +482,23 @@ draw_menu "Server Type Selection" \
           3) 
             monitor_ports     
             ;;
-          4) 
+          4)
+            view_logs
+            ;;
+          5)
+            view_tunnel_info
+            ;;
+          6)
+            restart_management
+            ;;
+          7)
+            manage_cronjobs
+            ;;
+          8) 
             colorEcho "Exiting..." yellow; exit 0 
             ;;
           *) 
-            colorEcho "Invalid selection. Please enter 1, 2, 3, or 4." red 
+            colorEcho "Invalid selection. Please enter 1-8." red 
             ;;
         esac
       done
@@ -306,7 +519,6 @@ done
 
 # ------------------ IP Version Menu (Only for Iran) ------------------
 if [ "$SERVER_TYPE" == "iran" ]; then
-  read -p "How many foreign servers do you have? " SERVER_COUNT
   while true; do
     draw_menu "IP Version Selection" \
       "1 | IPv4" \
